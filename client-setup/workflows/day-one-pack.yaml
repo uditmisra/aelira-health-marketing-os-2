@@ -1,0 +1,427 @@
+name: Day 1 Pack
+version: "1.0"
+description: |
+  Turns a company URL into a fully populated marketing system in ~90 minutes.
+  Phase 0: deep research pass. Phase 1: core/ population (parallel). Phase 2: positioning + narrative (sequential).
+  One human gate. Phase 3: growth assets (parallel). Final output: every core/ file populated + 5 usable marketing assets.
+system: client-setup
+trigger: manual  # run once per new client, or to refresh a stale system from scratch
+
+global_context: []  # starts cold — no core/ assumed to exist
+
+inputs:
+  - name: website_url
+    description: "The client's primary website URL"
+    required: true
+    example: "https://aelira.in"
+  - name: company_name
+    description: "Company name — extracted automatically if not provided"
+    required: false
+  - name: known_competitors
+    description: "Any competitors you already know about — comma-separated names or URLs"
+    required: false
+
+preflight:
+  validate_inputs:
+    - field: website_url
+      on_missing: stop
+      stop_message: "website_url is required. This is the only input needed to begin — enter the client's primary website URL."
+  context_check: []  # no existing core/ required — this workflow builds it from scratch
+
+# ═══════════════════════════════════════════════════════════════
+# PHASE 0 — RESEARCH (sequential, ~20 min)
+# All downstream agents read this output. Research quality = output ceiling.
+# ═══════════════════════════════════════════════════════════════
+
+steps:
+
+  - id: research
+    phase: 0
+    name: "Deep research pass — crawl, search, and structure all intelligence"
+    agent: client-setup/agents/day-one-research-agent.md
+    input:
+      source: user_input
+      fields:
+        - website_url
+        - company_name
+        - known_competitors
+    output:
+      path: "runs/day-one-pack/{{run_id}}/raw-research.md"
+    gate:
+      type: none
+    on_failure:
+      action: stop
+      message: "Research phase failed — check if the URL is accessible. If the site requires authentication or is in maintenance mode, note this and provide any known context manually."
+
+# ═══════════════════════════════════════════════════════════════
+# PHASE 1 — CORE FOUNDATION (parallel, ~20 min)
+# All four agents read raw-research.md simultaneously.
+# All four write to core/ — these are the foundation files every other agent reads.
+# ═══════════════════════════════════════════════════════════════
+
+  - id: extract_brand_assets
+    phase: 1
+    parallel_group: phase_1_foundation
+    name: "Extract brand visual assets — colors, fonts, logo"
+    agent: client-setup/agents/brand-extractor.md
+    depends_on: [research]
+    input:
+      source: step_output
+      refs:
+        - research.output
+      additional:
+        website_url: "{{inputs.website_url}}"
+    output:
+      path: "core/brand/assets.md"
+      write_to_core: true
+    gate:
+      type: none
+
+  - id: build_voice_tone
+    phase: 1
+    parallel_group: phase_1_foundation
+    name: "Build brand voice and tone from customer language and site signals"
+    agent: client-setup/agents/voice-and-tone-builder.md
+    depends_on: [research]
+    input:
+      source: step_output
+      refs:
+        - research.output
+    context:
+      - "runs/day-one-pack/{{run_id}}/raw-research.md"
+    output:
+      path: "core/brand/voice-and-tone.md"
+      write_to_core: true
+    gate:
+      type: none
+
+  - id: build_icp
+    phase: 1
+    parallel_group: phase_1_foundation
+    name: "Build primary ICP from research signals"
+    agent: client-setup/agents/icp-builder-agent.md
+    depends_on: [research]
+    input:
+      source: step_output
+      refs:
+        - research.output
+    context:
+      - "runs/day-one-pack/{{run_id}}/raw-research.md"
+    output:
+      path: "core/icp/primary-icp.md"
+      write_to_core: true
+    gate:
+      type: none
+
+  - id: build_competitive
+    phase: 1
+    parallel_group: phase_1_foundation
+    name: "Build competitor cards and landscape overview"
+    agent: client-setup/agents/competitive-landscape-builder.md
+    depends_on: [research, build_icp]  # needs ICP to assess overlap — runs after icp is written
+    input:
+      source: step_output
+      refs:
+        - research.output
+    context:
+      - "runs/day-one-pack/{{run_id}}/raw-research.md"
+      - "core/icp/primary-icp.md"
+    output:
+      path: "core/competitive/"
+      write_to_core: true
+      creates:
+        - "core/competitive/competitor-[N].md"  # one per competitor
+        - "core/competitive/landscape-overview.md"
+    gate:
+      type: none
+
+# ═══════════════════════════════════════════════════════════════
+# PHASE 2 — POSITIONING (sequential, ~20 min)
+# Positioning sprint runs first. Product narrative depends on its output.
+# ═══════════════════════════════════════════════════════════════
+
+  - id: positioning_sprint
+    phase: 2
+    name: "Run positioning sprint — Dunford framework, produces messaging pillars"
+    workflow: product-marketing/positioning/workflows/new-positioning-sprint.yaml
+    depends_on: [phase_1_foundation]  # all Phase 1 parallel tasks must complete
+    input:
+      sprint_trigger: "Day 1 Pack onboarding — new client, no existing positioning"
+      customer_input_available: "none — will work from research data; validate with real customers within 60 days"
+    output:
+      path: "core/brand/messaging-pillars.md"
+      write_to_core: true  # new-positioning-sprint.yaml step 7 writes this
+    gate:
+      type: none  # gate is inside the positioning sprint workflow itself
+
+  - id: product_narrative
+    phase: 2
+    name: "Build product narrative — philosophy, mechanism, proof, ICP fit"
+    agent: product-marketing/narrative/agents/product-narrative-builder.md
+    depends_on: [positioning_sprint]
+    context:
+      - "core/brand/voice-and-tone.md"
+      - "core/icp/primary-icp.md"
+      - "core/brand/messaging-pillars.md"
+      - "runs/day-one-pack/{{run_id}}/raw-research.md"
+    input:
+      source: step_output
+      refs:
+        - positioning_sprint.output
+      additional:
+        note: "Day 1 Pack context — no existing category narrative exists. Use the competitive landscape overview as the market context and write the product narrative as a standalone document that covers both the category frame and the product story. Flag the category narrative as MISSING and note it should be built in the next 30 days."
+    output:
+      path: "runs/day-one-pack/{{run_id}}/product-narrative.md"
+    gate:
+      type: none
+
+# ═══════════════════════════════════════════════════════════════
+# HUMAN GATE — POSITIONING APPROVAL
+# The only required human intervention in the full Day 1 Pack.
+# All Phase 3 assets inherit from this decision — approve carefully.
+# ═══════════════════════════════════════════════════════════════
+
+  - id: positioning_approval
+    phase: 2
+    name: "[GATE] Positioning approval — all Phase 3 assets built from this"
+    agent: none
+    depends_on: [product_narrative]
+    gate:
+      type: human_approval
+      present_as: |
+        ## Positioning ready. Review before generating growth assets.
+
+        Phases 0–2 are complete. Every core/ file has been populated.
+        All Phase 3 assets — ads, blogs, emails, battlecards, website copy — will be built from the positioning below.
+        This is the only decision point. Take 5 minutes.
+
+        ---
+
+        **Positioning claim:**
+        {{core/brand/messaging-pillars.md → primary_claim}}
+
+        **Who it's for:**
+        {{core/icp/primary-icp.md → primary_buyer_title}} at {{core/icp/primary-icp.md → company_profile_summary}}
+
+        **Key differentiator:**
+        {{core/brand/messaging-pillars.md → key_differentiator}}
+
+        **Primary alternative we're positioned against:**
+        {{core/competitive/landscape-overview.md → recommended_counter_positioning_priority_1}}
+
+        **What we never say:**
+        {{core/brand/messaging-pillars.md → avoid}}
+
+        ---
+
+        **Questions to ask yourself:**
+        1. Does this positioning reflect how your best customers describe the value they get?
+        2. Would your team be able to use this framing in a sales call or patient consultation today?
+        3. Is there anything here that feels off — a word, a claim, a segment focus?
+
+        ---
+
+        Reply with one of:
+        - `approve` — correct; build Phase 3
+        - `modify [field]: [change]` — e.g., "modify differentiator: should mention speed, not just simplicity"
+        - `reject: [reason]` — rerun positioning sprint with your feedback
+
+      on_approve: continue_phase_3
+      on_modify: |
+        Apply the modification to core/brand/messaging-pillars.md, confirm the change, and re-present the approval gate with the updated positioning.
+      on_reject: |
+        Re-run positioning_sprint step with the rejection reason prepended as feedback:
+        "Previous positioning was rejected. Reason: [reason]. Adjust the positioning sprint accordingly."
+
+# ═══════════════════════════════════════════════════════════════
+# PHASE 3 — GROWTH ASSETS (parallel, ~30 min)
+# All 5 tasks run simultaneously after positioning approval.
+# All read from the completed core/ files.
+# ═══════════════════════════════════════════════════════════════
+
+  - id: ad_copy
+    phase: 3
+    parallel_group: phase_3_assets
+    name: "Generate ad copy — LinkedIn + Google Search"
+    workflow: growth-marketing/workflows/ad-copy-generation.yaml
+    depends_on: [positioning_approval]
+    input:
+      campaign_goal: "New client launch — awareness and lead generation"
+      platforms: "LinkedIn, Google Search"
+      pillar_focus: "all"
+      funnel_stage: "awareness and consideration"
+    output:
+      path: "runs/day-one-pack/{{run_id}}/ad-copy/"
+
+  - id: blog_posts
+    phase: 3
+    parallel_group: phase_3_assets
+    name: "Write 3 complete blog posts"
+    agent: growth-marketing/agents/blog-content-agent.md
+    depends_on: [positioning_approval]
+    context:
+      - "core/brand/voice-and-tone.md"
+      - "core/icp/primary-icp.md"
+      - "core/brand/messaging-pillars.md"
+      - "core/competitive/landscape-overview.md"
+      - "runs/day-one-pack/{{run_id}}/raw-research.md"
+    output:
+      path: "runs/day-one-pack/{{run_id}}/blog-posts.md"
+
+  - id: email_sequence
+    phase: 3
+    parallel_group: phase_3_assets
+    name: "Build 5-email welcome sequence"
+    workflow: growth-marketing/workflows/email-sequence-build.yaml
+    depends_on: [positioning_approval]
+    input:
+      sequence_type: "welcome / nurture"
+      sequence_length: 5
+      goal: "educate new leads on the core value proposition, build trust, convert to consultation or trial"
+    output:
+      path: "runs/day-one-pack/{{run_id}}/email-sequence/"
+
+  - id: battlecards
+    phase: 3
+    parallel_group: phase_3_assets
+    name: "Build competitor battlecards"
+    workflow: product-marketing/sales-enablement/workflows/new-competitor-battlecard.yaml
+    depends_on: [positioning_approval]
+    input:
+      competitors: "all primary and secondary competitors from core/competitive/"
+    output:
+      path: "runs/day-one-pack/{{run_id}}/battlecards/"
+
+  - id: website_copy
+    phase: 3
+    parallel_group: phase_3_assets
+    name: "Write homepage and key page copy"
+    agent: growth-marketing/agents/website-copy-agent.md
+    depends_on: [positioning_approval]
+    context:
+      - "core/brand/voice-and-tone.md"
+      - "core/brand/messaging-pillars.md"
+      - "core/icp/primary-icp.md"
+      - "core/competitive/landscape-overview.md"
+      - "runs/day-one-pack/{{run_id}}/raw-research.md"
+    output:
+      path: "runs/day-one-pack/{{run_id}}/website-copy.md"
+
+# ═══════════════════════════════════════════════════════════════
+# COMPLETION
+# ═══════════════════════════════════════════════════════════════
+
+  - id: run_summary
+    phase: 4
+    name: "Write run summary and asset manifest"
+    agent: none
+    depends_on: [phase_3_assets]
+    actions:
+      - type: write_file
+        target: "runs/day-one-pack/{{run_id}}/run-summary.md"
+        content: |
+          # Day 1 Pack — Run Summary
+          Run ID: {{run_id}}
+          Date: {{date}}
+          Client: {{inputs.company_name or extracted_company_name}}
+          Website: {{inputs.website_url}}
+          business_model: {{detected_business_model}}
+
+          ## Core/ files written
+          - core/brand/assets.md ✅
+          - core/brand/voice-and-tone.md ✅
+          - core/brand/messaging-pillars.md ✅
+          - core/icp/primary-icp.md ✅
+          - core/competitive/landscape-overview.md ✅
+          - core/competitive/competitor-[N].md × {{competitor_count}} ✅
+
+          ## Assets produced
+          | Asset | File | Status |
+          |---|---|---|
+          | Ad copy (LinkedIn + Google Search) | runs/day-one-pack/{{run_id}}/ad-copy/ | ✅ |
+          | Blog posts (×3) | runs/day-one-pack/{{run_id}}/blog-posts.md | ✅ |
+          | Email sequence (×5) | runs/day-one-pack/{{run_id}}/email-sequence/ | ✅ |
+          | Competitor battlecards | runs/day-one-pack/{{run_id}}/battlecards/ | ✅ |
+          | Website copy | runs/day-one-pack/{{run_id}}/website-copy.md | ✅ |
+
+          ## Validation reminders (within 60 days)
+          - ICP is labeled HYPOTHESIS — validate with 5+ real customer/patient conversations
+          - Positioning was built from web research — confirm with sales/intake conversations
+          - Blog keyword targets need traffic validation in Semrush/Ahrefs
+          - Ad copy hypotheses should be tagged in core/system-intelligence/ad-hypotheses.md before first live run
+
+          ## What to run next
+          1. Review each core/ file and make any corrections — especially ICP and voice/tone
+          2. Run weekly-competitive-pulse to set a baseline
+          3. Schedule positioning validation with real customers/patients within 30 days
+          4. Review and approve each Phase 3 asset before publishing externally
+
+      - type: append_to_file
+        target: "core/system-intelligence/changelog.md"
+        content: "[{{run_id}}] day-one-pack: full onboarding run completed. core/ populated from scratch. 5 asset types generated. business_model: {{detected_business_model}}."
+
+output:
+  summary: "Day 1 Pack complete — core/ populated, 5 asset types generated"
+  deliverables:
+    - path: "runs/day-one-pack/{{run_id}}/raw-research.md"
+      label: "Research intelligence (Phase 0)"
+    - path: "core/brand/"
+      label: "Brand files (voice-and-tone, assets, messaging-pillars)"
+    - path: "core/icp/primary-icp.md"
+      label: "Primary ICP"
+    - path: "core/competitive/"
+      label: "Competitive landscape + competitor cards"
+    - path: "runs/day-one-pack/{{run_id}}/ad-copy/"
+      label: "Ad copy — LinkedIn + Google Search"
+    - path: "runs/day-one-pack/{{run_id}}/blog-posts.md"
+      label: "3 complete blog posts"
+    - path: "runs/day-one-pack/{{run_id}}/email-sequence/"
+      label: "5-email welcome sequence"
+    - path: "runs/day-one-pack/{{run_id}}/battlecards/"
+      label: "Competitor battlecards"
+    - path: "runs/day-one-pack/{{run_id}}/website-copy.md"
+      label: "Homepage + key page copy"
+    - path: "runs/day-one-pack/{{run_id}}/run-summary.md"
+      label: "Run summary and asset manifest"
+
+deliver_to:
+  type: google_doc
+  name: "{{company_name}} — Day 1 Pack — {{run_id}}"
+  format: cmo_report
+  tier0_delivery: artifact
+  mcp_required: google-workspace
+  fallback: |
+    Copy each asset file from the run directory and paste into Google Docs/Sheets manually.
+    Priority order: website-copy.md → blog-posts.md → ad-copy/ → email-sequence/ → battlecards/
+
+writes_to_core:
+  - path: "core/brand/assets.md"
+    written_by: extract_brand_assets
+    condition: always
+  - path: "core/brand/voice-and-tone.md"
+    written_by: build_voice_tone
+    condition: always
+  - path: "core/icp/primary-icp.md"
+    written_by: build_icp
+    condition: always
+  - path: "core/competitive/"
+    written_by: build_competitive
+    condition: always
+  - path: "core/brand/messaging-pillars.md"
+    written_by: positioning_sprint
+    condition: on_positioning_approval
+  - path: "core/system-intelligence/changelog.md"
+    written_by: run_summary
+    condition: always
+
+on_completion:
+  triggers:
+    - condition: "always"
+      suggestion: "weekly-competitive-pulse"
+      message: "Day 1 Pack complete. Run weekly-competitive-pulse now to establish a competitive baseline before growth assets go live."
+    - condition: "always"
+      suggestion: "weekly-performance-review"
+      message: "Set up a weekly-performance-review schedule — first run in 4 weeks once initial assets have been live and generating data."
+    - condition: "business_model == healthcare_services"
+      suggestion: "review-intelligence-agent"
+      message: "For healthcare clients: run review-intelligence-agent to analyze existing Google/Justdial reviews and surface patient language for the next content cycle."

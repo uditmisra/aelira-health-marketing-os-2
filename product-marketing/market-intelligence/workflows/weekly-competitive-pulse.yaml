@@ -1,0 +1,254 @@
+name: Weekly Competitive Pulse
+version: "1.0"
+description: Signal-vs-noise competitive summary — what changed across competitors this week and what requires a response
+system: product-marketing
+trigger: manual  # target: every Monday alongside weekly-performance-review
+
+global_context:
+  - core/competitive/landscape-overview.md
+  - core/icp/primary-icp.md
+  - core/brand/messaging-pillars.md
+
+inputs:
+  - name: ironclad_signals
+    description: "Any Ironclad updates this week: pricing page changes, homepage/tagline changes, product changelog, job postings, press, G2 reviews, new ad creative seen"
+    required: false
+    default: "no_new_data"
+    example: "Ironclad posted 5 new enterprise sales roles in NYC. Homepage tagline unchanged. No new product announcements."
+  - name: docusign_clm_signals
+    description: "Any DocuSign CLM updates this week: IAM platform changes, pricing, product, press, ads"
+    required: false
+    default: "no_new_data"
+  - name: concord_signals
+    description: "Any Concord updates this week"
+    required: false
+    default: "no_new_data"
+  - name: other_competitor_signals
+    description: "Any signals from other competitors (Juro, ContractPodAi, new entrants, etc.)"
+    required: false
+    default: "no_new_data"
+  - name: field_feedback
+    description: "Competitive mentions from sales team this week: Slack messages, Gong notes, rep emails, deals where a competitor was mentioned"
+    required: false
+    default: "no_field_feedback"
+    example: "Two reps mentioned Ironclad is offering 3-month free pilots to our target accounts. One deal lost to DocuSign CLM — buyer said 'we already use DocuSign for e-sign.'"
+  - name: prior_week_pulse_path
+    description: "Path to last week's competitive pulse report for context continuity"
+    required: false
+    example: "core/competitive/pulse-archive/2026-03-05.md"
+
+preflight:
+  flag_if_missing:
+    - fields: [ironclad_signals, docusign_clm_signals, concord_signals, other_competitor_signals, field_feedback]
+      threshold: all_missing
+      message: |
+        No competitive signal inputs provided. The pulse can still run but will only surface
+        analysis based on existing competitor cards — no new signals to process.
+        For a useful pulse, collect at minimum: competitor pricing/homepage checks and any
+        field feedback from the sales team.
+
+steps:
+  # ─────────────────────────────────────────────────────────
+  # STEP 1: Competitive monitor processes all signals
+  # ─────────────────────────────────────────────────────────
+  - id: competitive_monitor
+    name: Process signals and generate weekly pulse report
+    agent: product-marketing/market-intelligence/agents/competitive-monitor.md
+    context:
+      - core/competitive/competitor-ironclad.md
+      - core/competitive/competitor-docusign-clm.md
+    input:
+      source: multiple
+      fields:
+        - ironclad_signals
+        - docusign_clm_signals
+        - concord_signals
+        - other_competitor_signals
+        - field_feedback
+        - prior_week_pulse_path
+      instructions: |
+        For each competitor, classify every signal on a 4-level scale:
+        - IMMEDIATE FLAG: requires response within 24 hours (pricing change affecting active deals,
+          direct attack ad campaign, major funding/acquisition announcement)
+        - HIGH: warrants action this week (new feature release, significant positioning shift,
+          aggressive hiring into our ICP segment)
+        - MEDIUM: worth monitoring, no immediate action (minor product updates, new case studies,
+          individual G2 reviews)
+        - LOW / NO CHANGE: noted but no action needed
+
+        At the end, produce a routing summary: who needs to be notified of what, by when.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-pulse-report.md"
+      format: markdown
+      expected_structure: |
+        IMMEDIATE FLAGS: [list or "none this week"]
+        HIGH PRIORITY: [list]
+        MEDIUM: [list]
+        LOW / NO CHANGE: [by competitor]
+        FIELD SIGNALS: [summary of rep-sourced intelligence]
+        ROUTING SUMMARY: who gets notified of what
+        COMPETITOR CARD UPDATES NEEDED: list of cards requiring updates based on this week's signals
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 2: [GATE] PMM lead review
+  # ─────────────────────────────────────────────────────────
+  - id: pmm_review
+    name: "[GATE] PMM lead validates signal classifications"
+    agent: none
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: PMM Review
+
+        Review the competitive pulse (step-1).
+
+        1. **Immediate flags** — are these genuinely urgent or false alarms?
+        2. **Field signals** — do the rep-sourced signals change any classification?
+        3. **Escalation check** — does anything here require going beyond the normal routing?
+           Examples requiring escalation:
+           - Pricing change right before a major renewal cycle → notify Sales lead + CS lead directly
+           - Competitor funding round → notify CMO/CPO same day, not in weekly summary
+           - Direct attack campaign naming SpotDraft → notify CMO immediately
+
+        Respond:
+        - `approve` — classifications look right, proceed to distribution
+        - `escalate: [item] to [person/team] because [reason]` — add escalation actions
+        - `reclassify: [item] from [level] to [level] because [reason]` — adjust signal level
+
+        Your escalation and reclassification decisions will be applied before archiving.
+      on_approve: continue
+      on_escalate: continue_with_annotation
+      on_reject: retry_step
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-2-pmm-review.md"
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 3: Update competitor cards
+  # ─────────────────────────────────────────────────────────
+  - id: update_competitor_cards
+    name: Update core/competitive/ cards with this week's signals
+    agent: product-marketing/market-intelligence/agents/competitive-monitor.md
+    input:
+      source: multiple
+      refs:
+        - competitive_monitor.output   # pulse report contains the list of updates needed
+        - pmm_review.output            # includes any reclassifications
+      instructions: |
+        Update each competitor card listed in the pulse report's "COMPETITOR CARD UPDATES NEEDED" section.
+        For each card: append the new signal to the "Recent moves" section with today's date.
+        Do not rewrite the card — append only.
+        Format: "- [YYYY-MM-DD]: [what changed] — Source: [where you saw it]"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-3-card-updates.md"
+      expected_structure: |
+        List of cards updated, with the specific text appended to each
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 4: Deliver digest to Google Doc + Slack
+  # ─────────────────────────────────────────────────────────
+  - id: deliver_digest
+    name: Format competitive digest as Google Doc and notify Slack
+    agent: growth-marketing/agents/doc-formatter-agent.md
+    input:
+      source: multiple
+      refs:
+        - competitive_monitor.output
+        - pmm_review.output
+      additional:
+        document_type: competitive_digest
+        document_name: "Competitive Intelligence — {{date}}"
+        intended_audience: "PMM, Sales, CMO"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-4-doc-delivery.md"
+    deliver_to:
+      - type: google_doc
+        name: "Competitive Intelligence — {{date}}"
+        format: competitive_digest
+        tier0_delivery: artifact  # Claude generates Doc as artifact → user opens in Google (one click)
+        mcp_required: google-workspace  # Tier 1: web app creates Doc via Google OAuth and captures URL
+        fallback: |
+          Copy the formatted digest from step-1-pulse-report.md
+          and paste into a new Google Doc. Doc name: "Competitive Intelligence — {{date}}"
+      - type: slack
+        channel: "#competitive-intel"
+        slack_template: competitive_signal_alert
+        agent: growth-marketing/agents/slack-notifier-agent.md
+        mcp_required: slack
+        fallback: |
+          Slack MCP not connected. Copy the IMMEDIATE FLAGS and HIGH PRIORITY sections from
+          step-1-pulse-report.md and post manually to #competitive-intel.
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 5: Archive and route
+  # ─────────────────────────────────────────────────────────
+  - id: archive_and_route
+    name: Archive pulse and log downstream actions
+    agent: none
+    actions:
+      - type: write_file
+        target: "core/competitive/pulse-archive/{{date}}.md"
+        source: competitive_monitor.output
+        note: "Weekly pulse archived for pattern analysis and historical reference"
+
+      - type: append_to_file
+        target: "core/system-intelligence/signal-log/{{run_id}}-competitive-pulse.md"
+        content: |
+          # Signal: Competitive Pulse — {{run_id}}
+          Immediate flags: [count]
+          High priority: [count]
+          Competitor cards updated: [list]
+          Field signals: [yes/no — count of rep-sourced items]
+          Escalations triggered: [list or none]
+
+      - type: append_to_file
+        target: "core/system-intelligence/changelog.md"
+        content: "[{{run_id}}] weekly-competitive-pulse: pulse complete — competitor cards updated: [list]"
+
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-4-archive-confirmation.md"
+    gate:
+      type: none
+
+output:
+  summary: "Weekly competitive pulse report with PMM-validated signal classifications, updated competitor cards, and routing instructions"
+  deliverables:
+    - path: "runs/{{workflow}}/{{run_id}}/step-1-pulse-report.md"
+      label: "Weekly Competitive Pulse (distribute per routing summary)"
+    - path: "core/competitive/pulse-archive/{{date}}.md"
+      label: "Archived pulse (filed to core/)"
+    - path: "runs/{{workflow}}/{{run_id}}/step-3-card-updates.md"
+      label: "Competitor card updates applied"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run Summary"
+
+writes_to_core:
+  - path: "core/competitive/pulse-archive/"
+    written_by: archive_and_route
+    condition: always
+  - path: "core/competitive/competitor-*.md"
+    written_by: update_competitor_cards
+    condition: on_updates_needed
+  - path: "core/system-intelligence/signal-log/"
+    written_by: archive_and_route
+    condition: always
+
+on_completion:
+  triggers:
+    - condition: "immediate_flags count >= 1"
+      suggestion: "new-competitor-battlecard"
+      message: "An immediate flag was raised. If this involves a competitor positioning shift or new threat, want to refresh or create a battlecard?"
+    - condition: "competitor card not updated in 30+ days and this week has no_new_data"
+      suggestion: null
+      message: "One or more competitor cards have no new data for 2+ consecutive weeks. Consider whether the signal collection process needs strengthening (dedicated Slack channel, sales team reminder)."
+
+resume:
+  check_for_incomplete: true
+  incomplete_run_message: |
+    Found an incomplete weekly-competitive-pulse run from {{run_id}}.
+    Completed: {{completed_steps}}. Resume from: {{next_step}}?

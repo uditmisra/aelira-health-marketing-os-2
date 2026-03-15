@@ -1,0 +1,344 @@
+name: Post-Launch Retrospective
+version: "1.0"
+description: Deep learning harvest run 14 days after every L1 launch. Captures market signal, interprets positioning implications, identifies system improvements, and encodes learnings back into core/ and agent files.
+system: system-intelligence
+trigger: manual  # scheduled at T+14 from L1 launch date when the launch brief is approved
+
+global_context:
+  - core/brand/messaging-pillars.md
+  - core/icp/primary-icp.md
+  - core/system-intelligence/health-dashboard.md
+
+inputs:
+  - name: launch_name
+    description: "Name of the L1 launch this retro is for"
+    required: true
+    example: "AI Contract Review — L1 Launch"
+  - name: launch_brief_path
+    description: "Path to the approved L1 launch brief in the repo"
+    required: true
+    example: "product-marketing/launches/ai-contract-review/launch-brief-l1.md"
+  - name: launch_date
+    description: "Actual launch date (T-0). Format: YYYY-MM-DD"
+    required: true
+    example: "2026-04-01"
+  - name: channel_performance_data
+    description: "14-day post-launch performance data: paid CTR/CVR, email open/click, organic traffic, social engagement. Paste data or describe what's available."
+    required: false
+    default: "not_provided"
+    example: "Email: 42% open rate, 8% CTR. LinkedIn: 0.9% CTR, $95 CPL. Blog: 2,400 sessions in 14 days."
+  - name: sales_feedback
+    description: "Sales team feedback on how launch messaging landed in deals. Direct input or from field-feedback-synthesizer."
+    required: false
+    default: "not_provided"
+  - name: press_coverage
+    description: "Any press, analyst, or social coverage of the launch. Links or summaries."
+    required: false
+    default: "not_provided"
+
+preflight:
+  validate_inputs:
+    - field: launch_name
+      on_missing: stop
+      stop_message: "Launch name is required."
+    - field: launch_brief_path
+      on_missing: stop
+      stop_message: "Launch brief path is required — this is the reference document for goal vs. actual comparison."
+    - field: launch_date
+      on_missing: stop
+      stop_message: "Launch date is required to confirm the 14-day window has passed."
+  context_check:
+    - path: "{{launch_brief_path}}"
+      on_missing: warn
+      warn_message: "Launch brief not found at {{launch_brief_path}}. Retro will proceed without goal vs. actual comparison — flag findings as directional only."
+    - path: core/customer-voice/win-loss-interviews/
+      on_missing: warn
+      warn_message: "No win/loss data found. Positioning implications will be limited to messaging and channel signal only."
+
+steps:
+  # ─────────────────────────────────────────────────────────────
+  # STEP 1: Launch retro — collect and structure launch signal
+  # ─────────────────────────────────────────────────────────────
+  - id: launch_signal
+    name: "Day 14: Collect and structure launch performance signal"
+    agent: system-intelligence/agents/pattern-analyst.md
+    context:
+      - "{{launch_brief_path}}"
+      - core/measurement/kpi-framework.md
+      - core/system-intelligence/signal-log/
+    input:
+      source: user_input
+      fields:
+        - channel_performance_data
+        - sales_feedback
+        - press_coverage
+      instructions: |
+        Run in launch-retro mode. Review the full launch window — from launch brief approval through T+14.
+
+        Produce the raw launch performance picture. Answer each of these questions with specific data where available:
+
+        **1. Goal vs. Actual**
+        For each success metric in the launch brief: target → actual → status (On Track / Below / Above).
+        If performance data not provided for a metric: flag as "data not yet available."
+
+        **2. What performed**
+        Which content, channel, or message drove the most engagement, pipeline, or coverage?
+        Be specific: not "email performed well" but "email sequence had 42% open rate vs. 28% list average — subject line 'Contracts reviewed in minutes, not days' outperformed 2 variants."
+
+        **3. What didn't perform**
+        What fell flat? Include a hypothesis for each underperformer — is it a messaging issue, a distribution issue, or a timing issue? These are different problems with different fixes.
+
+        **4. Market reception**
+        How did the market describe the launch? (Press framing, analyst commentary, social conversation, customer questions.)
+        Does the market's description match how we positioned it?
+        Divergence = a signal. If buyers called it "contract automation" and we called it "CLM for legal teams," that gap is a data point.
+
+        **5. Sales reaction**
+        What did prospects say when sales used launch messaging?
+        Which objections surfaced that the launch content didn't address?
+        Which proof points actually landed vs. fell flat?
+
+        **6. Tier validation**
+        Was L1 the right classification? Did this launch generate the level of response (press, pipeline, customer activation) that a major launch should?
+        If not: flag — the tier calibration may need adjusting.
+
+        **7. Signal log review**
+        Review all signal-log entries from the launch window (T-14 through T+14).
+        Count: how many signals were flagged during this window? How many were acted on? How many are still open?
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-launch-signal.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 2: Positioning interpretation
+  # ─────────────────────────────────────────────────────────────
+  - id: positioning_interpretation
+    name: "Day 14-15: Interpret positioning signal from launch data"
+    agent: product-marketing/positioning/agents/message-testing-analyst.md
+    context:
+      - core/brand/messaging-pillars.md
+      - core/icp/primary-icp.md
+      - core/customer-voice/win-loss-interviews/
+    input:
+      source: multiple
+      refs:
+        - launch_signal.output
+      instructions: |
+        Interpret the positioning-layer signal from the launch retro data.
+
+        Answer each question with specific evidence from Step 1:
+
+        **1. Which pillar landed?**
+        Which messaging pillar generated the strongest market response — most engagement, most resonant in sales conversations, most quoted in press?
+        Evidence: [specific data point from launch_signal output]
+
+        **2. Which pillar didn't land?**
+        Which pillar was ignored, challenged, or produced skepticism?
+        What does that suggest — is the pillar incorrect, or is the proof insufficient?
+        These are different: an incorrect pillar needs revision. An unproven pillar needs customer evidence.
+
+        **3. Frame resonance**
+        Did buyers put SpotDraft in the intended market frame? Or did they describe it differently?
+        Example: we framed it as "CLM for legal teams" — did buyers say "contract management" or "legal ops tool" or something else?
+        If buyers consistently used a different frame: this is a strong signal about category perception.
+
+        **4. Language gap**
+        List 3–5 phrases buyers, press, or analysts used to describe the product or feature that differ from our messaging.
+        These are candidates for language updates in agent files and core/ messaging.
+
+        **5. Canvas update assessment**
+        Based on all launch signal, does the positioning canvas need updating?
+        - No update needed: launch confirmed existing positioning
+        - Minor update: one pillar needs refinement or new proof point
+        - Meaningful update: recommend messaging-audit workflow
+        - Full reposition: recommend new-positioning-sprint (rare — don't trigger lightly)
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-2-positioning-interpretation.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 3: System-level pattern analysis
+  # ─────────────────────────────────────────────────────────────
+  - id: system_patterns
+    name: "Day 15: Identify system improvement patterns from launch window"
+    agent: system-intelligence/agents/pattern-analyst.md
+    context:
+      - core/system-intelligence/signal-log/
+      - core/system-intelligence/health-dashboard.md
+    input:
+      source: multiple
+      refs:
+        - launch_signal.output
+        - positioning_interpretation.output
+      instructions: |
+        Run in launch-retro mode. Extend scope to the full launch window (T-14 through T+14).
+
+        **1. Multi-signal patterns**
+        Look for patterns where multiple signal types (ad performance + sales feedback + win/loss + press) all point the same direction.
+        A convergent pattern is high-confidence. A single-source observation is a hypothesis.
+
+        **2. Agent quality review**
+        List all agents used during this launch. For each:
+        - Quality signal: was output used as-is, revised significantly, or rejected?
+        - Specific improvement opportunity (if any): "headline-agent consistently wrote benefit-first headlines that performed below pain-first variants — 3 data points from this launch"
+
+        **3. What this launch confirmed**
+        Patterns we suspected that are now validated by a live market test. These should be encoded as stronger instructions.
+        Format: "[Pattern] — confirmed by [specific evidence]. Recommend: [which agent file to update and how]"
+
+        **4. What this launch revealed**
+        Things we didn't know before the launch. New segments responding, new objections, unexpected proof points.
+        Format: "[Discovery] — first observed in this launch. Implication: [what to encode or watch]"
+
+        **5. Proposed system changes**
+        For each pattern or revelation, produce a change card:
+        ```
+        CHANGE CARD
+        Target: [agent file or core/ path]
+        Current: [what it says now]
+        Proposed: [what it should say]
+        Evidence: [specific data from this launch]
+        Risk: [any reason to be cautious about this change]
+        ```
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-3-system-patterns.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 4: [GATE] Human review before applying changes
+  # ─────────────────────────────────────────────────────────────
+  - id: review_gate
+    name: "[GATE] PMM + system review — validate findings and scope before encoding"
+    agent: none
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: Post-Launch Retro Review
+
+        Findings from {{launch_name}} are ready. Review before any changes are applied to core/ or agent files.
+
+        **This gate determines scope:**
+        Read the positioning interpretation (step-2) and choose one:
+        - `approve minor` — proceed to system-updater for targeted changes (pillar refinements, language updates, proof point additions)
+        - `approve messaging-audit` — run messaging-audit workflow first, then return to system-updater
+        - `approve positioning-sprint` — findings indicate a full repositioning is needed. System-updater will not run. Trigger new-positioning-sprint instead.
+        - `reject [reason]` — findings are incomplete. Specify what additional data is needed.
+
+        **What to evaluate:**
+        1. Do the top 3 learnings reflect what you observed during the launch?
+        2. Is the canvas update assessment accurate? (No update / Minor / Meaningful / Full reposition)
+        3. Are the proposed change cards specific, evidence-backed, and scoped correctly?
+        4. Are there any changes that would affect sales messaging mid-quarter (timing risk)?
+
+        **How to respond:**
+        - `approve minor` — apply change cards via system-updater
+        - `approve messaging-audit` — run messaging-audit first
+        - `approve positioning-sprint` — trigger new-positioning-sprint
+        - `reject: [what's missing]` — return for additional analysis
+      on_approve: continue
+      on_reject: return_to_system_patterns
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 5: Apply approved changes and close the loop
+  # ─────────────────────────────────────────────────────────────
+  - id: apply_changes
+    name: "Day 16-17: Apply approved changes + close the learning loop"
+    agent: system-intelligence/agents/system-updater.md
+    context:
+      - core/system-intelligence/health-dashboard.md
+    input:
+      source: multiple
+      refs:
+        - system_patterns.output
+        - review_gate.output
+      instructions: |
+        Apply all approved change cards from Step 3.
+
+        For each change card marked approved in the gate:
+        1. Apply the change to the target file
+        2. Commit with message format: "[system-intelligence] [agent/core path] — launch retro {{run_id}}: [reason]"
+        3. Log in core/system-intelligence/changelog.md
+
+        Common change types from post-launch retros:
+        - Messaging pillar proof point updated (new customer evidence from launch)
+        - New objection + response added to an agent (objection surfaced repeatedly during launch)
+        - Language pattern encoded in creative agents (buyers described it differently)
+        - Competitor card updated (competitor responded to the launch)
+        - Jaw-dropping moment added to core/customer-voice/jaw-dropping-moments.md
+
+        **Close the loop:**
+        1. Update core/system-intelligence/health-dashboard.md:
+           - Mark this launch retro complete
+           - Note any watch list items added (new segments, unresolved questions)
+           - Note any agent quality improvements applied
+
+        2. Save the full retro to:
+           core/system-intelligence/patterns/retro-{{launch_name_slug}}-{{run_id}}.md
+
+        3. If tier calibration was wrong (L1 that should have been L2, or vice versa):
+           Append a calibration note to system-intelligence/agents/launch-tier-classifier.md:
+           "CALIBRATION NOTE [{{run_id}}]: {{launch_name}} — [what the actual response level was, and what this suggests for future classification]"
+
+        4. Append to core/system-intelligence/changelog.md:
+           "[{{run_id}}] post-launch-retrospective: {{launch_name}} — [N] change cards applied. [list files updated]"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-5-changes-applied.md"
+    gate:
+      type: none
+
+output:
+  summary: "Post-launch retrospective complete — {{launch_name}} — learnings encoded into core/ and agent files"
+  deliver_to:
+    type: google_doc
+    name: "{{launch_name}} — Post-Launch Retro — {{run_id}}"
+    format: cmo_report
+    agent: growth-marketing/agents/doc-formatter-agent.md
+    source_steps: [launch_signal, positioning_interpretation, system_patterns]
+    tier0_delivery: artifact
+    mcp_required: google-workspace
+    fallback: |
+      Copy the retro findings from steps 1–3 into a Google Doc.
+      Doc name: "{{launch_name}} — Post-Launch Retro — {{run_id}}"
+  deliverables:
+    - path: "runs/{{workflow}}/{{run_id}}/step-1-launch-signal.md"
+      label: "Launch performance signal (goal vs. actual, what performed, what didn't)"
+    - path: "runs/{{workflow}}/{{run_id}}/step-2-positioning-interpretation.md"
+      label: "Positioning interpretation (pillar signal, frame resonance, language gap)"
+    - path: "runs/{{workflow}}/{{run_id}}/step-3-system-patterns.md"
+      label: "System patterns + change cards"
+    - path: "core/system-intelligence/patterns/retro-{{launch_name_slug}}-{{run_id}}.md"
+      label: "Archived retro (filed to core/)"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run summary"
+
+writes_to_core:
+  - path: "core/system-intelligence/patterns/"
+    written_by: apply_changes
+    condition: always
+  - path: "core/system-intelligence/health-dashboard.md"
+    written_by: apply_changes
+    condition: always
+  - path: "core/system-intelligence/changelog.md"
+    written_by: apply_changes
+    condition: always
+
+on_completion:
+  triggers:
+    - condition: "review_gate response contains 'approve messaging-audit'"
+      suggestion: "messaging-audit"
+      message: "Retro findings indicate a meaningful messaging update is needed. Run messaging-audit workflow before the next campaign."
+    - condition: "review_gate response contains 'approve positioning-sprint'"
+      suggestion: "new-positioning-sprint"
+      message: "Retro findings indicate a full repositioning is warranted. Run new-positioning-sprint before the next major launch."
+    - condition: "step-2 canvas_update_assessment != 'No update needed'"
+      suggestion: "new-competitor-battlecard"
+      message: "Positioning was updated. Battlecards referencing the old messaging are now stale — re-run new-competitor-battlecard for primary competitors."
+
+resume:
+  check_for_incomplete: true
+  incomplete_run_message: |
+    Found an incomplete post-launch-retrospective run from {{run_id}} ({{launch_name}}).
+    Completed: {{completed_steps}}. Resume from: {{next_step}}?

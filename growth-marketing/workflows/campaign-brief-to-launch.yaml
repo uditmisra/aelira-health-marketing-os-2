@@ -1,0 +1,274 @@
+name: Campaign Brief to Launch
+version: "1.0"
+description: Turn a campaign brief into a full launch package — audience strategy, channel plan, creative brief, copy batch, and launch checklist. Inherits PMM launch narrative if a product launch is the trigger.
+system: growth-marketing
+trigger: manual
+
+global_context:
+  - core/brand/voice-and-tone.md
+  - core/brand/messaging-pillars.md
+  - core/icp/primary-icp.md
+  - core/measurement/kpi-framework.md
+
+inputs:
+  - name: campaign_goal
+    description: "What the campaign needs to achieve — specific, measurable"
+    required: true
+    example: "Generate 150 demo requests from in-house legal teams at Series B SaaS companies in Q2"
+  - name: campaign_trigger
+    description: "What's prompting this campaign"
+    required: true
+    example: "Product launch — AI Contract Review feature | New competitive battlecard ready | Seasonal push | New segment expansion"
+  - name: channels
+    description: "Channels to activate. Comma-separated."
+    required: true
+    example: "LinkedIn Ads, Google Ads | LinkedIn Ads, Email | All paid + email"
+  - name: budget
+    description: "Total campaign budget or monthly budget"
+    required: false
+    default: "not_specified"
+    example: "$15,000/month | $45,000 total Q2"
+  - name: launch_narrative_path
+    description: "If this campaign is tied to a product launch, path to the launch narrative in the repo"
+    required: false
+    default: "none"
+    example: "product-marketing/launches/ai-contract-review/launch-narrative.md"
+  - name: flight_dates
+    description: "Campaign start and end dates"
+    required: false
+    default: "TBD"
+    example: "2026-04-01 to 2026-06-30"
+
+preflight:
+  validate_inputs:
+    - field: campaign_goal
+      on_missing: stop
+      stop_message: "Campaign goal is required. Without a specific goal, we can't set up measurement or validate creative against it."
+    - field: channels
+      on_missing: stop
+      stop_message: "Channels are required. Which platforms should this campaign run on?"
+    - field: campaign_trigger
+      on_missing: stop
+      stop_message: "Campaign trigger is required — it determines whether we inherit PMM narrative or build from scratch."
+
+steps:
+  # ─────────────────────────────────────────────────────────────
+  # STEP 1: Audience and channel strategy
+  # ─────────────────────────────────────────────────────────────
+  - id: audience_strategy
+    name: Define audience targeting and channel allocation
+    agent: growth-marketing/agents/campaign-strategist-agent.md
+    context:
+      - core/icp/primary-icp.md
+      - core/measurement/kpi-framework.md
+      - "{{launch_narrative_path}}"   # if provided
+    input:
+      source: user_input
+      fields:
+        - campaign_goal
+        - channels
+        - budget
+        - flight_dates
+      instructions: |
+        Build the audience and channel strategy:
+
+        1. **Audience segments** — for each channel:
+           - Primary audience: job titles, company firmographics, behavioral signals
+           - Secondary audience: retargeting/lookalike layer
+           - Exclusions: current customers, competitors, irrelevant segments
+
+        2. **Channel allocation** — if budget is provided, recommend % split by channel based on:
+           - Channel benchmarks from kpi-framework.md (LinkedIn CPL target < $120, Google branded < $30)
+           - Expected volume per channel given budget and benchmarks
+           - Campaign goal type (awareness vs. conversion)
+
+        3. **Funnel mapping** — which stage does each channel/ad type own?
+           - Top of funnel (awareness): LinkedIn Sponsored Content, YouTube, Display
+           - Mid-funnel (consideration): LinkedIn Lead Gen, Google non-branded
+           - Bottom of funnel (conversion): Google branded, Retargeting, Email
+
+        4. **KPIs per channel**: specific metric and target for each channel, aligned to kpi-framework.md
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-audience-strategy.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 2: Creative brief
+  # ─────────────────────────────────────────────────────────────
+  - id: creative_brief
+    name: Write the creative brief for the full campaign
+    agent: growth-marketing/agents/creative-brief-agent.md
+    context:
+      - core/brand/messaging-pillars.md
+      - core/brand/voice-and-tone.md
+      - "{{launch_narrative_path}}"
+    input:
+      source: multiple
+      refs:
+        - audience_strategy.output
+      additional:
+        - source: user_input
+          fields:
+            - campaign_trigger
+      instructions: |
+        Write a creative brief that will guide every asset produced for this campaign:
+
+        1. Campaign theme/hook: one central idea that ties all creative together
+        2. Messaging angle: which pillar from messaging-pillars.md this campaign leads with, and why
+        3. Tone direction: where on the voice spectrum (direct/bold vs. empathetic/educational) for this goal
+        4. Proof point to feature: specific stat or customer outcome to anchor the campaign
+        5. CTA: exact CTA text and destination — consistent across all channels
+        6. Creative executions needed: list every ad format and email type required (e.g., LinkedIn Single Image — 5 variants, LinkedIn Video — 2 scripts, Google RSA — 3 batches, Email sequence — 5 emails)
+        7. What to avoid: any messaging angles or visual directions that would conflict with current positioning
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-2-creative-brief.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 3: [GATE] Strategy review before creative production
+  # ─────────────────────────────────────────────────────────────
+  - id: strategy_gate
+    name: "[GATE] Approve audience strategy and creative brief before producing assets"
+    agent: none
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: Campaign Strategy Review
+
+        Audience strategy and creative brief are ready. Review before generating creative assets.
+
+        **Why this gate exists:** Creative production is expensive and hard to reverse. An approved brief here prevents having to redo assets after they're written.
+
+        **What to check:**
+        - Does the audience targeting match who we actually want to reach?
+        - Is the budget allocation sensible given the channel KPI targets?
+        - Does the creative brief lead with the right pain point for this audience?
+        - Is the proof point specific and believable?
+        - Are there any channels or formats missing?
+
+        **How to respond:**
+        - `approve` — proceed to creative production
+        - `modify [section]: [change]` — adjust strategy before producing assets
+        - `reject: [reason]` — restart from audience strategy
+      on_approve: continue
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 4: Ad copy and email production
+  # ─────────────────────────────────────────────────────────────
+  - id: creative_production
+    name: Produce full creative batch for all channels
+    agent: growth-marketing/agents/creative-copy-agent.md
+    context:
+      - core/brand/voice-and-tone.md
+      - core/brand/messaging-pillars.md
+    input:
+      source: multiple
+      refs:
+        - creative_brief.output
+        - audience_strategy.output
+      instructions: |
+        Produce all creative assets specified in the creative brief:
+
+        For each ad format:
+        - 3 headline variants (test different angles: pain-led, outcome-led, competitor-contrast)
+        - Body copy per format character limits
+        - CTA text (consistent with brief)
+        - Ad format notes (image direction, if visual asset is needed)
+
+        For email (if in channels):
+        - Produce Step 1 of email-sequence-build.yaml level quality
+        - Full sequence as specified in the brief
+
+        Apply voice rules strictly:
+        - No banned words (streamline, seamlessly, robust, powerful, comprehensive)
+        - Lead with their pain or outcome, not our feature
+        - Every claim needs specificity
+
+        Self-score each asset before presenting: [PASS] or [REVISED: reason]. Do not present failing assets.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-4-creative-batch.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 5: Launch checklist
+  # ─────────────────────────────────────────────────────────────
+  - id: launch_checklist
+    name: Generate launch checklist and trafficking sheet
+    agent: none
+    input:
+      source: multiple
+      refs:
+        - audience_strategy.output
+        - creative_production.output
+      instructions: |
+        Build a launch checklist:
+        For each channel:
+        - [ ] Audience segments configured in platform
+        - [ ] UTM parameters defined (format: utm_source=channel&utm_medium=cpc&utm_campaign=campaign_name)
+        - [ ] Creative assets uploaded and approved in platform
+        - [ ] Budget caps set
+        - [ ] Conversion tracking verified (fires on demo request / form submit)
+        - [ ] Exclusion lists applied
+        - [ ] Start date confirmed
+
+        Also produce a UTM tracking sheet: one row per ad, with full UTM string.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-5-launch-checklist.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 6: [GATE] Final creative and launch approval
+  # ─────────────────────────────────────────────────────────────
+  - id: final_approval
+    name: "[GATE] Final review before trafficking to ad platforms"
+    agent: none
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: Final Launch Approval
+
+        All creative assets are produced and the launch checklist is ready. This is the last review before anything goes to the platforms.
+
+        **Per external publish gate policy (CLAUDE.md): human must review all content going to paid or email before it ships.**
+
+        **How to respond:**
+        - `approve` — traffic all assets; campaign is cleared for launch
+        - `reject [asset]: [reason]` — revise specific asset before launch
+        - `hold: [reason]` — not ready to launch; pause
+      on_approve: continue
+
+output:
+  summary: "Campaign launch package — strategy, creative brief, full asset batch, launch checklist"
+  deliver_to:
+    - type: google_doc
+      name: "{{campaign_goal}} — Campaign Brief — {{run_id}}"
+      format: campaign_brief_doc
+      agent: growth-marketing/agents/doc-formatter-agent.md
+      source_steps: [creative_brief, audience_strategy]
+      tier0_delivery: artifact  # Claude generates Doc as artifact → user opens in Google (one click)
+      mcp_required: google-workspace  # Tier 1: web app creates Doc via Google OAuth and captures URL
+      fallback: |
+        Copy the brief from step-2-creative-brief.md
+        into a Google Doc. Doc name: "{{campaign_goal}} — Campaign Brief — {{run_id}}"
+    - type: google_sheets
+      name: "{{campaign_goal}} — UTM Tracker — {{run_id}}"
+      format: utm_tracker
+      agent: growth-marketing/agents/ad-assembler-agent.md
+      source_steps: [creative_production, launch_checklist]
+      tier0_delivery: artifact  # Claude generates Sheet as artifact → user opens in Google (one click)
+      mcp_required: google-workspace  # Tier 1: web app creates Sheet via Google OAuth and captures URL
+      fallback: |
+        Copy the UTM tracking table from step-5-launch-checklist.md and paste into a new Google Sheet.
+  deliverables:
+    - path: "runs/{{workflow}}/{{run_id}}/step-2-creative-brief.md"
+      label: "Creative brief"
+    - path: "runs/{{workflow}}/{{run_id}}/step-4-creative-batch.md"
+      label: "Full creative batch (all channels)"
+    - path: "runs/{{workflow}}/{{run_id}}/step-5-launch-checklist.md"
+      label: "Launch checklist + UTM tracking sheet"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run summary"

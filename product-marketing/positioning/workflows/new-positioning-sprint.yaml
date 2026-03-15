@@ -1,0 +1,338 @@
+name: New Positioning Sprint
+version: "1.0"
+description: Full positioning sprint using April Dunford's Obviously Awesome framework — surfaces competitive alternatives, identifies unique attributes, maps value to customer proof, and produces a new positioning statement with messaging implications
+system: product-marketing
+trigger: manual  # run when entering a new category, after Series B+ funding, or when win rates drop below 40%
+
+global_context:
+  - core/brand/messaging-pillars.md
+  - core/icp/primary-icp.md
+  - core/competitive/landscape-overview.md
+
+inputs:
+  - name: sprint_trigger
+    description: "What prompted this sprint"
+    required: true
+    example: "Win rate dropped from 55% to 38% over last quarter | Entering enterprise segment | New AI feature changes the value prop | Competitive reframe after Ironclad funding round"
+  - name: customer_input_available
+    description: "Whether recent customer interviews, win/loss calls, or survey data are available for this sprint"
+    required: false
+    default: "use_what_exists"
+    example: "yes — 5 recent win/loss calls in core/customer-voice/ | none — will work from existing core/ data"
+  - name: segment_focus
+    description: "If this sprint is focused on a specific segment, name it. Leave blank for full ICP."
+    required: false
+    default: "full_icp"
+    example: "Enterprise (1000+ employees) | Series B SaaS specifically | Professional services vertical"
+
+preflight:
+  validate_inputs:
+    - field: sprint_trigger
+      on_missing: stop
+      stop_message: "Sprint trigger is required — it determines what problem we're solving with new positioning. Describe what prompted this sprint."
+  context_check:
+    - path: core/customer-voice/win-loss-interviews/
+      on_missing: warn
+      warn_message: "No customer voice data found. Positioning without customer evidence is a hypothesis, not positioning. Strongly recommend running at least 3 win/loss calls before this sprint. Will proceed with messaging pillars and competitive data only."
+    - path: core/competitive/landscape-overview.md
+      on_missing: stop
+      stop_message: "core/competitive/landscape-overview.md is required — competitive alternatives are the foundation of the Dunford framework. Populate it before running this sprint."
+
+steps:
+  # ─────────────────────────────────────────────────────────────
+  # STEP 1: Competitive alternatives map
+  # ─────────────────────────────────────────────────────────────
+  - id: alternatives_map
+    name: Map competitive alternatives as customers actually experience them
+    agent: product-marketing/positioning/agents/positioning-researcher.md
+    context:
+      - core/competitive/landscape-overview.md
+      - core/competitive/
+      - core/customer-voice/win-loss-interviews/
+    input:
+      source: user_input
+      fields:
+        - sprint_trigger
+        - segment_focus
+      instructions: |
+        Apply the first step of the Dunford framework: identify competitive alternatives as CUSTOMERS define them — not the category we think we're in.
+
+        For each alternative:
+        1. Name it precisely (e.g., "Email + Shared Drive" not just "status quo")
+        2. Describe when a customer would choose it over us (the scenario, not the feature comparison)
+        3. Identify the buyer's assumed strength — what they believe they get from this alternative
+        4. Flag the key vulnerability — what they give up that they may not realize
+
+        Sources to use:
+        - Win/loss call data in core/customer-voice/win-loss-interviews/
+        - Competitive cards in core/competitive/
+        - The sprint_trigger context — it often reveals which alternative is winning
+
+        Expected alternatives to find for SpotDraft's context:
+        - Ironclad (direct competitor)
+        - DocuSign CLM (bundle buyer)
+        - Internal tools: email + Google Drive + DocuSign eSign
+        - "Do nothing / delay" (budget/priority alternative)
+        - Build-in-house / Legal Ops custom Notion/Airtable setups
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-alternatives-map.md"
+      expected_structure: |
+        COMPETITIVE ALTERNATIVES MAP
+        Alternative 1: [name]
+          When chosen: [scenario]
+          Assumed strength: [what buyer thinks they get]
+          Vulnerability: [what they're giving up]
+        Alternative N: ...
+        KEY INSIGHT: [the one alternative that's most relevant to the sprint trigger]
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 2: Unique attributes inventory
+  # ─────────────────────────────────────────────────────────────
+  - id: unique_attributes
+    name: Identify attributes that are genuinely unique vs. competitive alternatives
+    agent: product-marketing/positioning/agents/positioning-researcher.md
+    context:
+      - core/brand/messaging-pillars.md
+      - core/customer-voice/win-loss-interviews/
+    input:
+      source: multiple
+      refs:
+        - alternatives_map.output
+      instructions: |
+        For each competitive alternative identified in Step 1, identify features/capabilities that:
+        (a) We have AND
+        (b) The alternative doesn't have (or has significantly worse)
+
+        Then filter: remove anything that is "table stakes" for the category — things every buyer expects.
+        What remains is the UNIQUE ATTRIBUTE SET.
+
+        For each unique attribute:
+        - Name it in plain language (not marketing language)
+        - Describe it in one sentence a 10-year-old could understand
+        - Rate its uniqueness: Truly unique (only us) | Differentiated (we're measurably better) | Claimed (we say it but hard to prove)
+        - Flag if it's sustainable: Can a competitor replicate this in < 12 months?
+
+        Also: identify attributes we CLAIM to have that customers don't seem to value (these are positioning liabilities).
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-2-unique-attributes.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 3: Value mapping — attributes → outcomes
+  # ─────────────────────────────────────────────────────────────
+  - id: value_map
+    name: Map unique attributes to customer-proven value
+    agent: product-marketing/positioning/agents/value-mapping-agent.md
+    context:
+      - core/customer-voice/win-loss-interviews/
+      - core/icp/primary-icp.md
+    input:
+      source: multiple
+      refs:
+        - unique_attributes.output
+        - alternatives_map.output
+      instructions: |
+        For each unique attribute, map it to the value it delivers for our ICP:
+
+        Format:
+        Attribute: [name]
+        → Feature: [what it does]
+        → Benefit: [what that enables]
+        → Value: [the business outcome for the ICP]
+        → Proof: [specific customer evidence — quote, stat, or story from core/customer-voice/]
+
+        Then rank the attributes by: (a) strength of proof + (b) relevance to ICP buying trigger.
+
+        The top 2-3 attributes are the foundation of the new positioning.
+
+        Flag any attribute in the top 3 that lacks proof — this is a research gap, not a positioning failure.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-3-value-map.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 4: Positioning statement draft
+  # ─────────────────────────────────────────────────────────────
+  - id: positioning_statement
+    name: Draft new positioning statement and messaging implications
+    agent: product-marketing/positioning/agents/positioning-writer.md
+    context:
+      - core/brand/voice-and-tone.md
+      - core/icp/primary-icp.md
+    input:
+      source: multiple
+      refs:
+        - alternatives_map.output
+        - unique_attributes.output
+        - value_map.output
+      additional:
+        - source: user_input
+          fields:
+            - sprint_trigger
+            - segment_focus
+      instructions: |
+        Draft 3 positioning statement candidates using the Dunford format:
+        "For [ICP], [Company/Product] is the [category frame] that [unique value] unlike [primary alternative], because [proof/mechanism]."
+
+        Each candidate should:
+        1. Use a different category frame (e.g., "CLM built for legal teams" vs. "contract operations platform" vs. "legal workflow automation")
+        2. Lead with a different unique attribute from the top-ranked value map
+        3. Name a different primary alternative
+
+        After the 3 candidates, produce:
+        **Messaging implications**: For the recommended candidate, what changes in:
+        - Core messaging pillars (what stays, what updates, what is retired)
+        - Primary ICP definition (does segment focus shift?)
+        - Competitive narrative (which alternative becomes the primary foil)
+        - Website headline implications (what's the new H1 direction)
+        - Sales pitch opening (how does the discovery conversation change)
+
+        Do not update core/ files yet — that happens after human approval.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-4-positioning-candidates.md"
+      expected_structure: |
+        POSITIONING CANDIDATE A: [statement]
+        POSITIONING CANDIDATE B: [statement]
+        POSITIONING CANDIDATE C: [statement]
+
+        RECOMMENDED: [A/B/C] — [one paragraph rationale, naming which evidence supports it]
+
+        MESSAGING IMPLICATIONS (if Recommended is adopted):
+        - Messaging pillars: [what changes]
+        - ICP: [what changes]
+        - Competitive narrative: [what changes]
+        - Website H1 direction: [example]
+        - Sales pitch opening: [example]
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 5: [GATE] PMM + leadership review
+  # ─────────────────────────────────────────────────────────────
+  - id: positioning_review
+    name: "[GATE] PMM + leadership review of positioning candidates"
+    agent: none
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: Positioning Review — This Requires Careful Thought
+
+        Three positioning candidates have been drafted with messaging implications for the recommended option.
+
+        **This is a positioning change gate** — per CLAUDE.md, this affects every agent in the system. Do not rush it.
+
+        Review questions:
+        1. Does the recommended candidate reflect how our best customers describe the value they get?
+        2. Can the sales team deliver the new positioning credibly in a discovery call today?
+        3. Does the category frame help or hurt awareness? (A new frame requires category education; an existing frame borrows category awareness)
+        4. Is the primary alternative the one we're actually most often compared to in deals?
+        5. What would we need to change in the product or proof points to make Candidate B or C stronger?
+
+        **How to respond:**
+        - `approve [A/B/C]` — adopt this candidate; proceed to update core/ files
+        - `modify [A/B/C]: [specific change]` — adjust the chosen candidate before adopting
+        - `reject all: [reason]` — none of these are right; describe what's missing and return to research
+        - `hold: [reason]` — pause the sprint; schedule a customer validation session first
+      on_approve: continue
+      on_reject: return_to_positioning_statement
+      on_hold: stop
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 6: Deliver positioning document as Google Doc
+  # ─────────────────────────────────────────────────────────────
+  - id: deliver_positioning_doc
+    name: Format approved positioning as a living Google Doc
+    agent: growth-marketing/agents/doc-formatter-agent.md
+    input:
+      source: multiple
+      refs:
+        - positioning_statement.output
+        - positioning_review.output
+      additional:
+        document_type: positioning_doc
+        document_name: "{{COMPANY_NAME}} Positioning — {{run_id}}"
+        intended_audience: "PMM, Marketing, Sales Leadership"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-6-doc-delivery.md"
+    deliver_to:
+      type: google_doc
+      name: "{{COMPANY_NAME}} Positioning — {{run_id}}"
+      format: positioning_doc
+      tier0_delivery: artifact  # Claude generates Doc as artifact → user opens in Google (one click)
+      mcp_required: google-workspace  # Tier 1: web app creates Doc via Google OAuth and captures URL
+      fallback: |
+        Copy the positioning document from step-4-positioning-candidates.md and paste into a new Google Doc.
+        Doc name: "{{COMPANY_NAME}} Positioning — {{run_id}}"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 7: Update core/ files
+  # ─────────────────────────────────────────────────────────────
+  - id: update_core
+    name: Update messaging pillars and ICP based on approved positioning
+    agent: system-intelligence/agents/system-updater.md
+    input:
+      source: multiple
+      refs:
+        - positioning_statement.output
+        - positioning_review.output   # approved candidate + any modifications
+      instructions: |
+        Apply the approved positioning to core/:
+
+        1. Update core/brand/messaging-pillars.md:
+           - Update the category frame, primary differentiator, and competitive foil to match the approved positioning
+           - Revise any pillar that conflicts with the new positioning
+           - Add a "positioning change log" entry at the top: date, sprint trigger, what changed
+           Commit message: "[core] update messaging-pillars.md — positioning sprint {{run_id}}: {{sprint_trigger}}"
+
+        2. If segment focus shifted: update core/icp/primary-icp.md accordingly
+           Commit message: "[core] update primary-icp.md — segment refinement from positioning sprint {{run_id}}"
+
+        3. Append to core/system-intelligence/changelog.md:
+           "[{{run_id}}] positioning-sprint: new positioning adopted — [approved candidate one-liner]. Files updated: [list]"
+    actions:
+      - type: write_file
+        target: "core/brand/messaging-pillars.md"
+        source: approved_positioning_update
+      - type: append_to_file
+        target: "core/system-intelligence/changelog.md"
+        content: "[{{run_id}}] positioning-sprint complete — approved candidate applied to core/"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-6-core-updates.md"
+    gate:
+      type: none
+
+output:
+  summary: "New positioning sprint — Dunford framework, {{sprint_trigger}}, approved and applied to core/"
+  deliverables:
+    - path: "runs/{{workflow}}/{{run_id}}/step-4-positioning-candidates.md"
+      label: "Three positioning candidates with recommended option"
+    - path: "core/brand/messaging-pillars.md"
+      label: "Updated messaging pillars (live in core/)"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run summary"
+
+writes_to_core:
+  - path: "core/brand/messaging-pillars.md"
+    written_by: update_core
+    condition: on_approval
+  - path: "core/icp/primary-icp.md"
+    written_by: update_core
+    condition: if_segment_changed
+  - path: "core/system-intelligence/changelog.md"
+    written_by: update_core
+    condition: always
+
+on_completion:
+  triggers:
+    - condition: "always"
+      suggestion: "new-competitor-battlecard"
+      message: "Positioning updated — battlecards referencing the old positioning are now stale. Recommend re-running new-competitor-battlecard for Ironclad and DocuSign CLM with the updated messaging."
+    - condition: "always"
+      suggestion: "ad-copy-generation"
+      message: "Core messaging changed — regenerate ad copy batches to align with new positioning before next campaign launch."

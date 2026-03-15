@@ -1,0 +1,314 @@
+name: Quarterly Win/Loss Review
+version: "1.0"
+description: Deep analysis of deals won and lost in the past quarter — extracts patterns in why we win and lose, updates ICP scoring, identifies the top objections and competitive traps, and produces actionable recommendations for sales and PMM
+system: product-marketing
+trigger: manual  # run at end of each quarter; also run after any single month where win rate drops > 10 points
+
+global_context:
+  - core/icp/primary-icp.md
+  - core/competitive/landscape-overview.md
+  - core/brand/messaging-pillars.md
+
+inputs:
+  - name: quarter
+    description: "Quarter being reviewed (e.g., Q1 2026). Determines the date range."
+    required: true
+    example: "Q1 2026"
+  - name: deal_count_target
+    description: "Minimum number of closed deals (won + lost) to analyze. If fewer are available, note the confidence caveat."
+    required: false
+    default: "20"
+    example: "20"
+  - name: focus_competitor
+    description: "If this quarter saw notable wins or losses vs. a specific competitor, name them for deeper analysis"
+    required: false
+    default: "all"
+    example: "Ironclad | DocuSign CLM | all"
+
+preflight:
+  validate_inputs:
+    - field: quarter
+      format: "Q[1-4] YYYY"
+      on_missing: stop
+      stop_message: "Quarter is required. Which quarter are we reviewing? (e.g., Q1 2026)"
+  data_check:
+    - path: core/customer-voice/win-loss-interviews/
+      on_missing: warn
+      warn_message: "No win/loss interview notes found. Analysis will rely on CRM data only — quantitative patterns without qualitative context. Recommend running at least 5 win/loss calls before or during this review."
+
+steps:
+  # ─────────────────────────────────────────────────────────────
+  # STEP 1: Pull and structure deal data
+  # ─────────────────────────────────────────────────────────────
+  - id: deal_data_pull
+    name: Pull closed deals from CRM and structure for analysis
+    agent: product-marketing/market-intelligence/agents/win-loss-analyst.md
+    context:
+      - core/icp/primary-icp.md
+    input:
+      source: user_input
+      fields:
+        - quarter
+        - deal_count_target
+        - focus_competitor
+      instructions: |
+        Pull all deals closed (Won + Lost + Churned) in {{quarter}} from CRM (HubSpot MCP if available).
+
+        For each deal, capture:
+        - Deal ID, company name (or anonymized), close date
+        - Outcome: Won / Lost / No Decision / Churned
+        - Deal size (ACV)
+        - Lost reason (if available in CRM)
+        - Competitor named in deal (if available)
+        - ICP fit score: score each deal against core/icp/primary-icp.md criteria:
+          * Company size: in range? (100-1000 employees)
+          * Stage: B2B SaaS/tech?
+          * Legal team: 1-5 lawyers in-house?
+          * Volume: 100+ contracts/month signal?
+          * Buying trigger: any of the known triggers present?
+          Assign: Strong ICP fit | Moderate | Weak | Unknown
+
+        Build summary table. Flag if fewer than {{deal_count_target}} deals are available and note confidence level.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-deal-data.md"
+      expected_structure: |
+        DEAL SUMMARY: {{quarter}}
+        Total closed: [N] | Won: [N] | Lost: [N] | No decision: [N]
+        Win rate: [%] | vs. prior quarter: [+/- pp]
+        Average ACV: [won] vs [lost]
+
+        ICP FIT BREAKDOWN:
+        Strong ICP fit: [N] won, [N] lost — win rate: [%]
+        Moderate ICP fit: [N] won, [N] lost — win rate: [%]
+        Weak ICP fit: [N] won, [N] lost — win rate: [%]
+
+        COMPETITIVE BREAKDOWN:
+        [competitor]: [N] deals, [N] won — win rate: [%]
+
+        DEAL TABLE: [ID | Company | Outcome | ACV | Lost reason | Competitor | ICP fit]
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 2: Pattern analysis — why we win and lose
+  # ─────────────────────────────────────────────────────────────
+  - id: pattern_analysis
+    name: Extract win/loss patterns from deal data and interview notes
+    agent: product-marketing/market-intelligence/agents/win-loss-analyst.md
+    context:
+      - core/customer-voice/win-loss-interviews/
+      - core/competitive/
+    input:
+      source: multiple
+      refs:
+        - deal_data_pull.output
+      additional:
+        - source: user_input
+          fields:
+            - focus_competitor
+      instructions: |
+        Analyze the deal data and any available interview notes to extract patterns.
+
+        Required analysis:
+        1. **Win patterns** — what do our won deals have in common?
+           - ICP characteristics (industry, size, stage, team size)
+           - Buying triggers (what made them move NOW)
+           - Common objections overcome successfully
+           - Deal velocity: time from first touch to close
+
+        2. **Loss patterns** — what do our lost deals have in common?
+           - Lost reason categories (price / competitor / status quo / timing / wrong buyer)
+           - ICP fit of lost deals (are we losing strong-fit or weak-fit deals?)
+           - Stage of funnel where we lose most often
+           - Competitive losses: which competitor and what pattern
+
+        3. **Competitive patterns** (focus on {{focus_competitor}} if specified):
+           - In losses to [competitor]: what deal characteristics predict a loss?
+           - In wins against [competitor]: what sales motion or proof point was decisive?
+
+        4. **ICP signal** — does the data confirm or challenge core/icp/primary-icp.md?
+           - Are strong-ICP-fit deals actually winning more? (if not, the ICP definition may be wrong)
+           - Any emerging segment winning above average?
+
+        Apply 3-data-point threshold: call something a "pattern" only if it appears in 3+ deals.
+        Single observations = "signals worth watching".
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-2-win-loss-patterns.md"
+      expected_structure: |
+        WIN PATTERNS (3+ data points):
+        [pattern name]: [what it is, how many deals, implication]
+
+        LOSS PATTERNS (3+ data points):
+        [pattern name]: [what it is, how many deals, implication]
+
+        COMPETITIVE PATTERNS:
+        vs. {{focus_competitor}}: [pattern] — [win/loss predictor]
+
+        ICP VALIDATION:
+        Current ICP strong-fit win rate: [%] vs. weak-fit: [%]
+        ICP definition status: Confirmed | Needs refinement | Significant divergence
+        Signals worth watching (1-2 data points): [list]
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 3: Recommendations — what to change
+  # ─────────────────────────────────────────────────────────────
+  - id: recommendations
+    name: Generate specific recommendations for sales, PMM, and system
+    agent: product-marketing/market-intelligence/agents/win-loss-analyst.md
+    context:
+      - core/brand/messaging-pillars.md
+    input:
+      source: multiple
+      refs:
+        - deal_data_pull.output
+        - pattern_analysis.output
+      instructions: |
+        Produce specific, actionable recommendations across three tracks:
+
+        **Track 1: Sales motion changes**
+        - Recommendations for discovery process (new questions to add, traps to plant)
+        - Deal qualification changes (ICP scoring adjustments, disqualifier updates)
+        - Competitive handling (based on actual competitive loss patterns this quarter)
+        Format: [recommendation] | [evidence] | [priority: high/medium/low] | [owner: AE/SDR/Sales Mgr]
+
+        **Track 2: PMM changes**
+        - Messaging updates (if win patterns reveal value prop resonance or dissonance)
+        - Battlecard updates needed (specific sections to revise)
+        - ICP definition updates (if data challenges current ICP scoring)
+        - New proof points to develop (based on patterns in won deals)
+        Format: [recommendation] | [evidence] | [priority] | [owner: PMM]
+
+        **Track 3: System updates**
+        - New signal log categories to track (if patterns emerge that the system isn't currently capturing)
+        - core/ files to update based on this quarter's data
+        Format: [recommendation] | [why] | [file to update]
+
+        Be specific. "Update messaging" is not a recommendation. "Remove the 'legal efficiency' angle from Pillar 2 — it was cited as dismissible by 4 lost GCs; replace with the 'contract approval bottleneck' frame that appears in 6 won deals" is a recommendation.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-3-recommendations.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 4: [GATE] PMM + sales leadership review
+  # ─────────────────────────────────────────────────────────────
+  - id: review_gate
+    name: "[GATE] PMM + sales leadership review of findings and recommendations"
+    agent: none
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: Quarterly Win/Loss Review
+
+        Pattern analysis and recommendations are complete. Review before applying any changes.
+
+        **This is a significant decision point:**
+        - Track 1 (Sales) recommendations may require sales manager alignment before implementation
+        - Track 2 (PMM) recommendations may trigger a positioning sprint
+        - Track 3 (System) recommendations update core/ — confirm they reflect your interpretation of the data
+
+        **How to respond:**
+        - `approve all` — apply all recommendations; proceed to update core/ and archive
+        - `approve tracks [1/2/3]: [any notes]` — approve specific tracks, hold others
+        - `reject [recommendation number]: [reason]` — exclude specific recommendations
+        - `escalate [finding]: [to whom]` — flag a finding for broader review before acting
+      on_approve: continue
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 5: Deliver win/loss report as Google Doc
+  # ─────────────────────────────────────────────────────────────
+  - id: deliver_report
+    name: Format win/loss analysis as Google Doc for PMM and sales leadership
+    agent: growth-marketing/agents/doc-formatter-agent.md
+    input:
+      source: multiple
+      refs:
+        - deal_data_pull.output
+        - pattern_analysis.output
+        - recommendations.output
+      additional:
+        document_type: win_loss_report
+        document_name: "Win/Loss Review — {{quarter}}"
+        intended_audience: "PMM, Sales Leadership, CEO"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-5-doc-delivery.md"
+    deliver_to:
+      type: google_doc
+      name: "Win/Loss Review — {{quarter}}"
+      format: win_loss_report
+      tier0_delivery: artifact  # Claude generates Doc as artifact → user opens in Google (one click)
+      mcp_required: google-workspace  # Tier 1: web app creates Doc via Google OAuth and captures URL
+      fallback: |
+        Copy the win/loss analysis from step-2-win-loss-patterns.md and step-3-recommendations.md
+        into a new Google Doc. Doc name: "Win/Loss Review — {{quarter}}"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 6: Update core/ and archive
+  # ─────────────────────────────────────────────────────────────
+  - id: update_and_archive
+    name: Apply approved updates to core/ and archive the full review
+    agent: system-intelligence/agents/system-updater.md
+    input:
+      source: multiple
+      refs:
+        - pattern_analysis.output
+        - recommendations.output
+        - review_gate.output
+      instructions: |
+        1. Write the full win/loss review to core/customer-voice/win-loss-interviews/quarterly-review-{{quarter_slug}}.md
+        2. For any Track 2 (PMM) recommendation approved: apply changes to the specified core/ files
+        3. Update core/icp/primary-icp.md if ICP validation showed significant divergence and was approved
+        4. Append to core/system-intelligence/signal-log/signal-log-{{run_id}}.md:
+           "[{{run_id}}] win-loss: quarterly review {{quarter}} — [N] won, [N] lost, [N] patterns identified"
+        5. Append to core/system-intelligence/changelog.md:
+           "[{{run_id}}] quarterly-win-loss-review: {{quarter}} — [N] recommendations applied. Files updated: [list]"
+    actions:
+      - type: write_file
+        target: "core/customer-voice/win-loss-interviews/quarterly-review-{{quarter_slug}}.md"
+        source: full_review_output
+      - type: append_to_file
+        target: "core/system-intelligence/changelog.md"
+        content: "[{{run_id}}] quarterly-win-loss-review {{quarter}} complete"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-5-updates-applied.md"
+    gate:
+      type: none
+
+output:
+  summary: "{{quarter}} win/loss review — [N] deals analyzed, patterns extracted, recommendations approved"
+  deliverables:
+    - path: "runs/{{workflow}}/{{run_id}}/step-2-win-loss-patterns.md"
+      label: "Win/loss pattern analysis"
+    - path: "runs/{{workflow}}/{{run_id}}/step-3-recommendations.md"
+      label: "Recommendations: sales, PMM, system"
+    - path: "core/customer-voice/win-loss-interviews/quarterly-review-{{quarter_slug}}.md"
+      label: "Quarterly review archived in core/"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run summary"
+
+writes_to_core:
+  - path: "core/customer-voice/win-loss-interviews/"
+    written_by: update_and_archive
+    condition: always
+  - path: "core/icp/primary-icp.md"
+    written_by: update_and_archive
+    condition: if_icp_divergence_approved
+  - path: "core/system-intelligence/signal-log/"
+    written_by: update_and_archive
+    condition: always
+  - path: "core/system-intelligence/changelog.md"
+    written_by: update_and_archive
+    condition: always
+
+on_completion:
+  triggers:
+    - condition: "icp_divergence == significant"
+      suggestion: "new-positioning-sprint"
+      message: "ICP data significantly diverged from current definition. Recommend a positioning sprint to realign before next quarter."
+    - condition: "competitive_win_rate < 40 and focus_competitor != all"
+      suggestion: "new-competitor-battlecard"
+      message: "Win rate vs. {{focus_competitor}} is below 40%. Recommend refreshing the battlecard with this quarter's loss patterns before the next sales cycle."

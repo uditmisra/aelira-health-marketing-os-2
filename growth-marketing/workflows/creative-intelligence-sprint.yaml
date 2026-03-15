@@ -1,0 +1,169 @@
+name: Creative Intelligence Sprint
+version: "1.0"
+description: Analyze competitor ad creative across platforms and your own top/bottom performers to extract what's working, what's failing, and produce a creative direction recommendation for the next 4-6 weeks
+system: growth-marketing
+trigger: manual  # also triggered automatically when CPL > 150% of target for 2+ consecutive weeks
+
+global_context:
+  - core/brand/messaging-pillars.md
+  - core/icp/primary-icp.md
+  - core/ad-library/
+
+inputs:
+  - name: analysis_period
+    description: "Date range to analyze (YYYY-MM-DD to YYYY-MM-DD)"
+    required: true
+    example: "2026-01-01 to 2026-03-31"
+  - name: channels_to_analyze
+    description: "Which platforms to pull performance data from"
+    required: true
+    example: "LinkedIn Ads, Google Ads | LinkedIn Ads only | All"
+  - name: trigger_context
+    description: "Why this sprint is being run — provides hypothesis framing"
+    required: false
+    default: "scheduled"
+    example: "CPL spiked 40% over 2 weeks | New competitor running aggressive creative | Preparing Q2 creative refresh"
+
+preflight:
+  validate_inputs:
+    - field: analysis_period
+      on_missing: stop
+      stop_message: "Analysis period required. What date range should we analyze?"
+  data_check:
+    - path: core/ad-library/
+      on_missing: warn
+      warn_message: "No competitor ad library data found in core/ad-library/. Competitor creative analysis will be limited. Recommend populating with competitor ad screenshots or Semrush/SimilarWeb exports."
+
+steps:
+  - id: performance_analysis
+    name: Pull and rank own creative performance data
+    agent: growth-marketing/agents/campaign-analytics-agent.md
+    context:
+      - core/measurement/kpi-framework.md
+    input:
+      source: user_input
+      fields:
+        - analysis_period
+        - channels_to_analyze
+      instructions: |
+        Pull creative-level performance data for {{analysis_period}} from {{channels_to_analyze}}.
+
+        For each ad/creative:
+        - Impressions, clicks, CTR
+        - Conversions (demo requests), CVR
+        - Cost per conversion (CPA)
+        - Engagement rate (LinkedIn reactions/comments/shares)
+
+        Rank creatives: Top 20% (Champions) | Middle 60% (Average) | Bottom 20% (Fatigue/Failure)
+
+        For each Champion creative: what is the creative approach? (hook type, format, proof point used, ICP angle)
+        For each Failure creative: what pattern explains underperformance?
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-performance-analysis.md"
+    gate:
+      type: none
+
+  - id: competitor_creative_analysis
+    name: Analyze competitor ad creative patterns
+    agent: growth-marketing/agents/competitive-creative-intelligence.md
+    context:
+      - core/ad-library/
+      - core/competitive/landscape-overview.md
+    input:
+      source: user_input
+      fields:
+        - analysis_period
+        - trigger_context
+      instructions: |
+        Analyze competitor creative across the analysis period:
+        1. What messaging angles are Ironclad / DocuSign CLM using in paid ads?
+        2. Are there new hooks, proof points, or formats appearing in competitor creative?
+        3. Any creative that appears to be running at high volume (likely performing well for them)?
+        4. Any creative angle they've stopped using (likely failed for them)?
+
+        Produce a "competitive creative snapshot" — what the category conversation looks like from a paid creative perspective.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-2-competitor-creative.md"
+    gate:
+      type: none
+
+  - id: creative_direction
+    name: Synthesize findings into creative direction recommendation
+    agent: growth-marketing/agents/creative-intelligence-agent.md
+    context:
+      - core/brand/messaging-pillars.md
+      - core/brand/voice-and-tone.md
+    input:
+      source: multiple
+      refs:
+        - performance_analysis.output
+        - competitor_creative_analysis.output
+      instructions: |
+        Synthesize into a 4-6 week creative direction:
+
+        1. **What's working** — 2-3 creative approaches to double down on (with evidence)
+        2. **What to retire** — 2-3 approaches/angles to cut from rotation (with evidence)
+        3. **Gap identified** — one creative angle our data suggests would work but we haven't tested
+        4. **Competitive opportunity** — one thing competitors are doing or not doing that we should exploit
+        5. **Next creative brief direction** — specific enough to brief a designer/copywriter tomorrow:
+           - Hook type recommendation
+           - Format recommendation
+           - Proof point to feature
+           - Tone recommendation
+
+        Archive format: each finding must have a source (which data point or observation supports it).
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-3-creative-direction.md"
+    gate:
+      type: none
+
+  - id: review_and_archive
+    name: "[GATE] Review creative direction and archive to ad-library"
+    agent: none
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: Creative Intelligence Sprint Review
+
+        Review findings and creative direction recommendation.
+
+        **How to respond:**
+        - `approve` — archive findings; proceed with the recommended creative direction
+        - `modify [section]: [change]` — adjust the direction
+        - `reject: [reason]` — findings don't match your read of the data
+      on_approve: continue
+    actions:
+      - type: append_to_file
+        target: "core/ad-library/creative-intelligence-archive.md"
+        content: |
+          ## Sprint: {{analysis_period}}
+          Source: runs/{{workflow}}/{{run_id}}/step-3-creative-direction.md
+          Key finding: [summary from step-3]
+      - type: append_to_file
+        target: "core/system-intelligence/signal-log/signal-log-{{run_id}}.md"
+        content: "[{{run_id}}] ad-performance: creative-intelligence-sprint — analysis period {{analysis_period}}"
+
+output:
+  summary: "Creative intelligence sprint — {{analysis_period}} performance analysis, competitor scan, direction recommendation"
+  deliver_to:
+    type: google_doc
+    name: "Creative Direction — {{analysis_period}}"
+    format: creative_direction_doc
+    agent: growth-marketing/agents/doc-formatter-agent.md
+    source_steps: [creative_direction]
+    tier0_delivery: artifact  # Claude generates Doc as artifact → user opens in Google (one click)
+    mcp_required: google-workspace  # Tier 1: web app creates Doc via Google OAuth and captures URL
+    fallback: |
+      Copy the creative direction from step-3-creative-direction.md into a Google Doc.
+      Doc name: "Creative Direction — {{analysis_period}}"
+  deliverables:
+    - path: "runs/{{workflow}}/{{run_id}}/step-3-creative-direction.md"
+      label: "Creative direction recommendation (next 4-6 weeks)"
+    - path: "runs/{{workflow}}/{{run_id}}/step-1-performance-analysis.md"
+      label: "Performance analysis — champion/average/failure breakdown"
+
+on_completion:
+  triggers:
+    - condition: "always"
+      suggestion: "ad-copy-generation"
+      message: "Creative direction is ready. Run ad-copy-generation workflow next to produce the first asset batch against this direction."

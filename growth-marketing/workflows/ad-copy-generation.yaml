@@ -1,0 +1,418 @@
+# Ad Copy Generation — Orchestration Schema
+# Reference implementation: this is the canonical example of the YAML schema format.
+# All other workflow YAML files follow this exact structure.
+
+name: Ad Copy Generation
+version: "1.0"
+description: Campaign brief in → quality-gated ad creative batch out
+system: growth-marketing
+trigger: manual  # started by user command or called by campaign-brief-to-launch workflow
+
+# Context injected into every step unless a step explicitly overrides
+global_context:
+  - core/brand/voice-and-tone.md
+  - core/brand/messaging-pillars.md
+  - core/icp/primary-icp.md
+  - core/brand/style-guide.md
+
+# Human provides these before the workflow starts
+inputs:
+  - name: campaign_brief
+    description: "Goal, funnel stage, target persona, CTA direction, deadline"
+    required: true
+    example: "Goal: generate demo requests. Stage: Conversion. Persona: General Counsel. CTA: Book a demo. Deadline: next Monday."
+  - name: platforms
+    description: "Which ad platforms this batch is for"
+    required: true
+    example: "LinkedIn Ads, Google Ads"
+  - name: pillar_focus
+    description: "Which messaging pillar to emphasize. Use 'all' if multi-pillar campaign."
+    required: false
+    default: "all"
+    example: "Pillar 1: Speed Without Sacrifice"
+  - name: competitive_briefs_path
+    description: "Path to competitive briefs from the most recent creative-intelligence-sprint. If not available, leave blank."
+    required: false
+    example: "growth-marketing/workflows/runs/creative-intelligence-sprint/2026-02-15-090000/step-4-briefs.md"
+
+# Pre-flight validation — runs before any agent step
+preflight:
+  validate_inputs:
+    - field: campaign_brief
+      must_contain:
+        - "funnel stage"  # Awareness, Consideration, or Conversion — required for CTA selection
+        - "persona"       # which ICP profile
+        - "CTA"           # what action the creative drives
+      on_missing: "stop"
+      stop_message: |
+        The campaign brief is missing required fields. Before I can run this workflow, the brief needs:
+        - Funnel stage (Awareness / Consideration / Conversion) — determines CTA type
+        - Target persona — which ICP from core/icp/
+        - CTA direction — what action the creative should drive
+        Please update the brief and re-run.
+    - field: platforms
+      on_missing: "stop"
+      stop_message: "Platform is required — character limits and format specs differ per platform."
+  flag_if_missing:
+    - path: "{competitive_briefs_path}"
+      message: "No competitive briefs provided — agents will use core/ context only. Output quality is higher when competitive briefs from a recent creative-intelligence-sprint are available."
+
+steps:
+  # ─────────────────────────────────────────────────────────
+  # STEP 1: Headline generation
+  # ─────────────────────────────────────────────────────────
+  - id: generate_headlines
+    name: Generate headline batch
+    agent: growth-marketing/agents/creative-headline-agent.md
+    context:
+      - core/customer-voice/jaw-dropping-moments.md   # customer language for headline hooks
+    input:
+      source: user_input
+      fields:
+        - campaign_brief
+        - platforms
+        - pillar_focus
+        - competitive_briefs_path   # injected if provided; agents handle null gracefully
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-headlines.md"
+      format: markdown
+      expected_structure: |
+        Headline batch organized by: platform → frame type → headlines
+        Each headline includes: pillar mapping and character count
+        Minimum: 15 headlines per platform (3 per frame type × 5 frames)
+    gate:
+      type: human_approval
+      present_as: |
+        ## Headline Batch — Gate 1
+
+        Review this headline batch before copy is generated. Evaluate:
+        1. **Frame coverage** — are all five frames present (problem-led, benefit-led, social proof, curiosity, specificity)?
+        2. **Pillar accuracy** — does the batch reflect the intended pillar emphasis?
+        3. **Tone fit** — do the headlines match core/brand/voice-and-tone.md?
+
+        Respond:
+        - `approve` — batch looks right, proceed to copy generation
+        - `reject: [specific feedback]` — one or more frame clusters missed the mark; specify which
+        - `stop: [reason]` — the batch reveals a brief gap; fix upstream problem before continuing
+      on_approve: continue
+      on_reject: retry_step   # re-run this step with rejection reason as prepended feedback
+      on_stop: halt_workflow
+
+    on_failure: stop
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 2: Body copy generation
+  # ─────────────────────────────────────────────────────────
+  - id: generate_copy
+    name: Generate body copy
+    agent: growth-marketing/agents/creative-copy-agent.md
+    context:
+      - core/customer-voice/jaw-dropping-moments.md
+    input:
+      source: step_output
+      ref: generate_headlines.output   # reads the approved headline batch
+      additional:
+        - source: user_input
+          fields:
+            - campaign_brief
+            - platforms
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-2-copy.md"
+      format: markdown
+      expected_structure: |
+        Copy variants organized by headline ID
+        2 variants per headline: short and long
+        Platform-specific copy respecting character limits
+        Proof gap notes flagged inline
+    gate:
+      type: none   # copy goes straight to quality gate — no intermediate human review
+
+    on_failure: stop
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 3: Quality gate (batch scoring)
+  # ─────────────────────────────────────────────────────────
+  - id: quality_gate
+    name: Score and gate all assets
+    agent: growth-marketing/agents/asset-quality-gate.md
+    input:
+      source: multiple
+      refs:
+        - generate_headlines.output    # headline batch
+        - generate_copy.output         # copy batch
+        - user_input.campaign_brief    # brief (for ICP and message criteria)
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-3-quality-gate.md"
+      format: markdown
+      expected_structure: |
+        Quality gate summary (total generated, passed, conditional, failed, pass rate)
+        Approved assets section (organized by platform and frame type)
+        Conditional passes section (with the specific criterion flagged)
+        Did-not-pass section (with diagnosis per asset)
+        Proof gaps section
+    gate:
+      type: human_approval
+      present_as: |
+        ## Final Creative Review — Gate 2
+
+        Review the quality gate output:
+
+        1. **Approved assets** — are these ready to upload to the platform(s)?
+        2. **Conditional passes** (scored exactly 3 on a criterion) — accept as-is or request refinement?
+        3. **Did-not-pass** — is this a one-off miss or a systemic problem?
+           - If 30%+ failed: there is likely a brief or core/ data gap — don't push through
+        4. **Proof gaps** — which gaps are tasks for customer intelligence vs. acceptable without proof?
+
+        Respond:
+        - `approve` — batch is ready; log and archive
+        - `refine: [asset IDs and specific feedback]` — targeted refinement, not full regeneration
+        - `flag: [description]` — systemic issue detected; halt and investigate
+      on_approve: continue
+      on_reject: retry_step   # targeted refinement; re-runs gate agent with specific feedback
+      on_stop: halt_workflow
+
+    on_failure: stop
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 4: Assemble and deliver to Google Sheets
+  # ─────────────────────────────────────────────────────────
+  - id: assemble_and_deliver
+    name: Assemble approved ads into Google Sheet
+    agent: growth-marketing/agents/ad-assembler-agent.md
+    input:
+      source: multiple
+      refs:
+        - quality_gate.output          # approved pairs only
+        - user_input.campaign_brief    # for CTA URL
+      additional:
+        run_id: "{{run_id}}"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-4-assembled-ads.md"
+    deliver_to:
+      type: google_sheets
+      name: "{{COMPANY_NAME}} Ad Copy — {{run_id}}"
+      format: assembled_ad_table
+      tier0_delivery: artifact  # Claude generates Sheet as artifact → user opens in Google (one click, no setup)
+      mcp_required: google-workspace  # Tier 1: web app creates Sheet via Google OAuth and captures URL
+      fallback: |
+        Copy the TSV table from step-4-assembled-ads.md
+        and paste into a new Google Sheet. Sheet name: "{{COMPANY_NAME}} Ad Copy — {{run_id}}"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 5: Build image generation prompts
+  # Optional — skips if Brand DNA not yet populated.
+  # Outputs ready-to-submit FAL API payloads for all approved copy pairs.
+  # Execution path: web app "Generate Images" OR direct FAL call if key is available.
+  # ─────────────────────────────────────────────────────────
+  - id: generate_image_prompts
+    name: Build FAL image generation prompts from approved copy
+    agent: growth-marketing/agents/ad-image-template-agent.md
+    condition: "core/brand/brand-dna.md exists and Image Generation Prompt Modifier is not a placeholder"
+    skip_message: |
+      core/brand/brand-dna.md not found or Image Generation Prompt Modifier not yet populated.
+      Skipping image prompt generation.
+      To enable: run brand-dna-extractor or run the Day 1 Pack (which builds Brand DNA in Phase 1).
+    context:
+      - core/brand/brand-dna.md
+      - core/icp/primary-icp.md
+      - core/brand/voice-and-tone.md
+      - growth-marketing/templates/ad-image-templates/
+    input:
+      source: step_output
+      ref: quality_gate.output
+      additional:
+        - source: user_input
+          fields:
+            - platforms
+            - campaign_brief
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-5-image-prompts.json"
+      format: json
+      expected_structure: |
+        JSON array — one object per approved copy pair × best-fit template:
+        [
+          {
+            "model": "fal-ai/flux/schnell",
+            "payload": {
+              "prompt": "[brand_dna prepended to filled template prompt]",
+              "negative_prompt": "[template negative prompt]",
+              "image_size": "[platform FAL size string — landscape_16_9 | square_hd | portrait_4_3]",
+              "num_inference_steps": 4,
+              "num_images": 1,
+              "enable_safety_checker": true
+            },
+            "metadata": {
+              "template": "[template filename without .md]",
+              "brief_headline": "[headline]",
+              "platform": "[target platform]",
+              "funnel_stage": "[stage]",
+              "selection_reason": "[one sentence]"
+            }
+          }
+        ]
+    gate:
+      type: none
+    on_complete_message: |
+      Image prompts written to step-5-image-prompts.json.
+
+      To generate images:
+      - Web app: Run History → this run → Generate Images (prompts are pre-loaded)
+      - Direct: reply `generate images now` to call FAL for each prompt and write results to images.json
+        (requires FAL API key available in this Claude session or Project)
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 6: Populate Figma frames (optional — skips if PAT not configured)
+  # ─────────────────────────────────────────────────────────
+  - id: figma_populate
+    name: Populate Figma ad template frames
+    agent: none  # executed directly from the figma-populate-frames runbook
+    condition: "core/brand/assets.md figma_integration.pat_stored == true"
+    skip_message: |
+      Figma PAT not configured — skipping frame population.
+      To enable: go to Settings → Integrations → Figma and add your Personal Access Token.
+      See integrations/figma.md for setup guide.
+    input:
+      source: multiple
+      refs:
+        - assemble_and_deliver.output
+      additional:
+        figma_runbook: "growth-marketing/scripts/figma-populate-frames.md"
+        run_id: "{{run_id}}"
+      instructions: |
+        Run the Figma frame population runbook at growth-marketing/scripts/figma-populate-frames.md.
+        Use the assembled_ad_table Sheet from step 4 as the data source.
+        Write the export manifest to runs/{{workflow}}/{{run_id}}/step-6-figma-exports.md.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-6-figma-exports.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 7: Log and archive
+  # ─────────────────────────────────────────────────────────
+  - id: log_and_archive
+    name: Log signal and archive approved creative
+    agent: none   # this step is executed by Claude Code directly, not an agent
+    actions:
+      - type: copy_file
+        from: "runs/{{workflow}}/{{run_id}}/step-3-quality-gate.md"
+        to: "core/ad-library/top-performers/{{campaign_brief.campaign_name}}-{{run_id}}.md"
+        condition: on_previous_step_approved
+
+      - type: append_to_file
+        target: "core/system-intelligence/signal-log/{{run_id}}-ad-copy-generation.md"
+        content: |
+          # Signal: Ad Copy Generation — {{run_id}}
+          Workflow: ad-copy-generation
+          Campaign: {{campaign_brief.campaign_name}}
+          Platforms: {{platforms}}
+          Pillar focus: {{pillar_focus}}
+          Competitive briefs used: {{competitive_briefs_path != null}}
+          Batch size: [from quality gate output]
+          Pass rate: [from quality gate output]
+          Proof gaps: [from quality gate output]
+          Agent quality signal: [any frame types that consistently failed]
+
+      - type: append_to_file
+        target: "core/system-intelligence/changelog.md"
+        content: "[{{run_id}}] ad-copy-generation: added creative batch to ad-library — {{campaign_brief.campaign_name}}"
+
+      # ── Hypothesis logging ──────────────────────────────────────────
+      # After every run, review the quality gate output and log:
+      # 1. Any new hypothesis worth testing in the next batch
+      # 2. Any active hypothesis in ad-hypotheses.md that this batch
+      #    produced data for — even preliminary / directional data
+      # 3. If confirmed or refuted: move the hypothesis to the right
+      #    section and write the confirmed finding in imperative form
+      #
+      # Do NOT update ad-hypotheses.md if there is no performance data
+      # yet (first run of a hypothesis). Log the hypothesis as active
+      # and wait for the signal log entry from the next review cycle.
+      - type: update_file
+        target: "core/system-intelligence/ad-hypotheses.md"
+        instructions: |
+          Read the quality gate output from step-3-quality-gate.md.
+          Read the current ad-hypotheses.md.
+
+          Then:
+          1. If the batch was designed to test an active hypothesis (check
+             the headline agent and copy agent outputs for "Hypothesis tested"
+             notes), add the run_id to that hypothesis entry's
+             "Run IDs tested" field.
+          2. If there is a new pattern worth testing — a frame type that
+             dominated the approved batch, a language choice that the agents
+             made consistently, a proof gap that appeared in 3+ copy units —
+             append a new hypothesis in the Active section using the log format.
+          3. Do NOT mark any hypothesis as confirmed or refuted based on
+             quality gate scoring alone. Quality gate = internal scoring.
+             Confirmation requires performance data from the signal log
+             (actual ad platform CTR/conversion data). Note this distinction.
+          4. Log at most 2 new hypotheses per run. More than that is noise.
+
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-7-log-confirmation.md"
+    gate:
+      type: none
+
+# ─────────────────────────────────────────────────────────
+# Final output — presented to human on workflow completion
+# ─────────────────────────────────────────────────────────
+output:
+  summary: "Approved ad creative batch ready for platform upload, plus proof gaps for customer intelligence follow-up"
+  deliverables:
+    - path: "runs/{{workflow}}/{{run_id}}/step-3-quality-gate.md"
+      label: "Approved creative batch (upload-ready)"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run summary"
+  present_as: |
+    ## Ad Copy Generation Complete
+
+    **Campaign:** {{campaign_brief.campaign_name}}
+    **Platform(s):** {{platforms}}
+    **Run ID:** {{run_id}}
+
+    Your approved creative batch is ready. See step-3-quality-gate.md for the full output.
+
+    **Next steps:**
+    1. Upload approved assets to your ad platform(s)
+    2. If proof gaps were flagged, create tasks in your project tracker for customer intelligence follow-up
+    3. Once ads run for 2+ weeks, add performance data back to the signal log
+
+# ─────────────────────────────────────────────────────────
+# Side effects — what this workflow writes to core/
+# ─────────────────────────────────────────────────────────
+writes_to_core:
+  - path: "core/ad-library/top-performers/"
+    description: "Approved creative batch archived for future reference"
+    written_by: log_and_archive
+    condition: on_human_approval   # only written after Gate 2 approved
+
+  - path: "core/system-intelligence/signal-log/"
+    description: "Signal entry for pattern-analyst to read in weekly system review"
+    written_by: log_and_archive
+    condition: always   # logged even if batch had low pass rate — that's a signal too
+
+# ─────────────────────────────────────────────────────────
+# Cross-workflow triggers
+# ─────────────────────────────────────────────────────────
+on_completion:
+  triggers:
+    - condition: "proof_gaps count > 3"
+      suggestion: "customer-discovery-sprint"
+      message: "More than 3 proof gaps flagged in this batch. Running a customer discovery sprint would give the headline and copy agents the specific evidence needed. Want to queue it?"
+    - condition: "pass_rate < 50"
+      suggestion: "messaging-audit"
+      message: "Pass rate below 50% suggests the messaging pillars may not be translating to ad creative. A messaging audit might reveal the disconnect. Want to run it?"
+
+# ─────────────────────────────────────────────────────────
+# Resume behavior (for interrupted runs)
+# ─────────────────────────────────────────────────────────
+resume:
+  check_for_incomplete: true
+  incomplete_run_message: |
+    Found an incomplete ad-copy-generation run from {{run_id}}.
+    Completed steps: {{completed_steps}}
+    Last gate result: {{last_gate_result}}
+    Resume from: {{next_step}}?

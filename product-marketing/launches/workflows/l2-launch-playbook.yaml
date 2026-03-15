@@ -1,0 +1,450 @@
+name: L2 Launch Playbook
+version: "1.0"
+description: 14-day launch sequence for significant feature launches — messaging alignment, asset production, quality gate, and go/no-go. Strengthens an existing pillar; does not open a new GTM motion.
+system: product-marketing
+trigger: manual  # triggered when launch-tier-classifier outputs L2 AND PMM lead confirms
+
+global_context:
+  - core/brand/voice-and-tone.md
+  - core/brand/messaging-pillars.md
+  - core/icp/primary-icp.md
+
+inputs:
+  - name: feature_name
+    description: "Name of the feature being launched"
+    required: true
+    example: "AI Contract Review"
+  - name: feature_description
+    description: "What the feature does in plain language — what it enables the user to do"
+    required: true
+    example: "Automatically identifies high-risk clauses in uploaded contracts and flags them with suggested edits before legal reviews"
+  - name: launch_date
+    description: "Target launch date (T-0). Format: YYYY-MM-DD"
+    required: true
+    example: "2026-04-01"
+  - name: messaging_pillar
+    description: "Which existing messaging pillar this feature strengthens"
+    required: true
+    example: "Speed to review | Visibility and control | AI that does the work"
+  - name: target_segment
+    description: "Which customer/prospect segment this launch matters most to. Leave blank for full ICP."
+    required: false
+    default: "full_icp"
+    example: "In-house legal teams at Series B SaaS | Enterprise GC audience"
+  - name: press_release
+    description: "Should a press release be drafted? Will be evaluated against PR criteria at T-7."
+    required: false
+    default: "evaluate_at_t7"
+    example: "yes | no | evaluate_at_t7"
+  - name: customer_reference_available
+    description: "Is a named customer reference available to use in launch assets?"
+    required: false
+    default: "unknown"
+    example: "yes — Acme Legal / no / tbd"
+
+preflight:
+  validate_inputs:
+    - field: feature_name
+      on_missing: stop
+      stop_message: "Feature name is required."
+    - field: launch_date
+      on_missing: stop
+      stop_message: "Launch date is required. Without it, the 14-day sequence cannot be timed."
+    - field: messaging_pillar
+      on_missing: stop
+      stop_message: "Messaging pillar is required. L2 launches strengthen an existing pillar — identify which one before proceeding."
+  context_check:
+    - path: core/brand/messaging-pillars.md
+      on_missing: stop
+      stop_message: "core/brand/messaging-pillars.md is required — the launch must anchor to an existing pillar."
+
+steps:
+  # ─────────────────────────────────────────────────────────────
+  # T-14: STEP 1 — Launch initialization
+  # ─────────────────────────────────────────────────────────────
+  - id: launch_init
+    name: "T-14: Initialize launch — build brief, stakeholder list, timeline"
+    agent: none
+    input:
+      source: user_input
+      fields:
+        - feature_name
+        - feature_description
+        - launch_date
+        - messaging_pillar
+        - target_segment
+        - press_release
+        - customer_reference_available
+      instructions: |
+        Produce the L2 launch brief and initialization package:
+
+        **1. Launch Brief (1 page)**
+        - Feature: {{feature_name}}
+        - What it does: {{feature_description}}
+        - Messaging pillar it strengthens: {{messaging_pillar}}
+        - Target segment for this launch: {{target_segment}}
+        - Launch date: {{launch_date}}
+        - Success metrics: [3 specific metrics — e.g., email open rate > 35%, blog traffic +X%, sales team uses the feature in 3 deals within 2 weeks]
+
+        **2. Stakeholder list**
+        - PMM lead: responsible for this playbook
+        - Sales lead: receives brief at T-7, input on battlecard
+        - CS lead: customer comms review + help center coordination
+        - Support lead: briefed at T-2 on known edge cases
+
+        **3. 14-day timeline**
+        T-14: Initialization (this step)
+        T-10: Messaging alignment + sales enablement content
+        T-7: Asset creation + internal readiness check
+        T-5: [GATE] Asset quality gate — PMM approves all external assets
+        T-2: [GATE] Go/No-Go — final readiness check
+        T-0: Launch day
+        T+7: Performance check (not a full retro)
+
+        **4. CMO notification note**
+        1-line summary for CMO awareness (not approval): "Running L2 for {{feature_name}}, launching {{launch_date}}."
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/t14-launch-brief.md"
+    gate:
+      type: none
+    checkpoint: false
+
+  # ─────────────────────────────────────────────────────────────
+  # T-10: STEP 2 — Messaging alignment + sales enablement content
+  # ─────────────────────────────────────────────────────────────
+  - id: messaging_alignment
+    name: "T-10: Messaging alignment + battlecard update + customer email draft"
+    agent: product-marketing/sales-enablement/agents/battlecard-writer.md
+    context:
+      - core/brand/messaging-pillars.md
+      - core/icp/primary-icp.md
+      - core/competitive/landscape-overview.md
+    input:
+      source: multiple
+      refs:
+        - launch_init.output
+      instructions: |
+        This step runs two tasks in sequence:
+
+        **Task A — Messaging alignment check**
+        Confirm: does {{feature_name}} strengthen the {{messaging_pillar}} pillar, or does it change the positioning?
+        - If it strengthens → proceed normally
+        - If it materially changes the positioning (new claim, new ICP, new competitive frame) → STOP and flag: "This feature may require a positioning sprint before launch. Flag to PMM lead."
+
+        Produce a 1-paragraph messaging alignment note: "{{feature_name}} strengthens [pillar] by adding [proof point]. In deals against [primary competitor], the rep can now say [new line]. No change to existing pillar claims."
+
+        **Task B — Sales enablement update**
+        Update the relevant battlecard section(s) to include the new capability:
+        - Which competitor does this feature most directly address?
+        - Write the updated "Our Differentiated Strengths" entry for the relevant competitor card
+        - Write the sales brief (1-page email format) that goes to all AEs and SEs at T-7:
+          - Feature name and what it does in one sentence
+          - The deal scenario where this changes the conversation (specific — not "use this with all prospects")
+          - The new line to use vs. [primary competitor]
+          - The proof point (use customer reference if available: {{customer_reference_available}})
+          - 2 objections they might hear + responses
+
+        **Task C — Customer email draft**
+        Draft the customer email for the relevant segment ({{target_segment}}):
+        - Subject line (3 variants — test pain-led, outcome-led, feature-named)
+        - Body: 150 words max. Lead with the customer outcome, not the feature name.
+        - CTA: what do you want the customer to do? (Learn more, try it, book a call)
+        - Tone: existing customer relationship tone — more direct than prospect comms
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/t10-messaging-and-enablement.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # T-7: STEP 3 — Asset creation + internal readiness
+  # ─────────────────────────────────────────────────────────────
+  - id: asset_creation
+    name: "T-7: Create launch assets + run readiness check"
+    agent: growth-marketing/agents/creative-copy-agent.md
+    context:
+      - core/brand/voice-and-tone.md
+      - core/brand/messaging-pillars.md
+      - core/icp/primary-icp.md
+    input:
+      source: multiple
+      refs:
+        - launch_init.output
+        - messaging_alignment.output
+      instructions: |
+        Produce all launch assets for {{feature_name}}:
+
+        **1. Blog post / product update post**
+        - Title (3 variants — test different angles)
+        - Body: 400–600 words. Structure: hook (1 paragraph), the problem it solves (1 paragraph), how it works (2–3 paragraphs), proof/outcome (customer quote or stat), CTA.
+        - Meta description: 155 chars max.
+
+        **2. Social copy**
+        - LinkedIn: 3 variants. 150 words max per variant. Lead with the outcome or a surprising stat.
+        - Twitter/X: 3 variants. 280 chars max.
+
+        **3. Press release (if press_release = yes, or if evaluate_at_t7)**
+        If evaluating: apply the L2 press release criteria (2+ must be true):
+        (a) Named customer reference available: {{customer_reference_available}}
+        (b) Measurable outcome data exists in messaging
+        (c) Feature closes a well-known competitive gap (check competitive cards)
+        (d) Feature enables a new use case that expands the ICP
+        If 2+ criteria are met: draft the press release. If not: output "Press release not warranted — invest in customer comms instead" and skip.
+
+        PR format if drafted: headline, dateline, opening paragraph (the news), product quote (PMM/CEO), customer quote (if available), boilerplate, contact.
+
+        **4. Internal readiness checklist (T-7 version)**
+        Check the following and mark each Green / Amber / Red:
+        - [ ] Feature is live in staging / production environment confirmed
+        - [ ] Help center article drafted (not yet published)
+        - [ ] Support team briefed on expected questions
+        - [ ] Sales brief ready to send
+        - [ ] Customer email ready to send
+        - [ ] Blog post drafted
+        - [ ] Social copy drafted
+
+        Any Red item with no path to Green by T-2: flag to PMM lead immediately.
+
+        Apply voice rules — no banned words, concrete outcomes, peer tone.
+        Self-score each external asset before presenting: [PASS] or [REVISED: reason].
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/t7-launch-assets.md"
+    gate:
+      type: none
+    checkpoint: true
+    checkpoint_message: |
+      T-7 checkpoint. All launch assets are drafted and the T-7 readiness check is complete.
+
+      Before proceeding to the asset quality gate (T-5), review:
+      1. Launch assets in: runs/{{workflow}}/{{run_id}}/t7-launch-assets.md
+      2. Readiness checklist: any Amber or Red items need a resolution plan before T-2
+
+      When you're ready to proceed to the quality gate, return to this workflow and type: continue
+
+  # ─────────────────────────────────────────────────────────────
+  # T-5: STEP 4 — [GATE] Asset quality gate
+  # ─────────────────────────────────────────────────────────────
+  - id: asset_quality_gate
+    name: "[GATE T-5] PMM lead approves all external assets before staging"
+    agent: growth-marketing/agents/asset-quality-gate.md
+    context:
+      - core/brand/messaging-pillars.md
+      - core/icp/primary-icp.md
+    input:
+      source: multiple
+      refs:
+        - asset_creation.output
+        - messaging_alignment.output
+      instructions: |
+        Score all external-facing assets from T-7 (blog post, customer email, social copy, press release if drafted):
+
+        For each asset, score against three criteria (1–10):
+        1. On-message: does it reinforce the {{messaging_pillar}} pillar without contradicting other pillars?
+        2. ICP-relevant: does it speak to the {{target_segment}} buyer's specific pain or trigger?
+        3. Specific, not generic: does it use concrete outcomes, not category jargon? Is every claim supported by a proof point?
+
+        Assets scoring 7+ on all three criteria: PASS
+        Assets scoring below 7 on any criterion: REVISE — provide specific revision instruction before re-scoring
+
+        Do not present failing assets for human review. Fix them first.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/t5-quality-gate.md"
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate T-5: Asset Quality Gate
+
+        All launch assets have been scored. Review quality scores and approve for staging.
+
+        **What to check:**
+        - Are the blog post and customer email true to the {{messaging_pillar}} pillar?
+        - Does the social copy sound like SpotDraft's voice — direct and specific, not corporate?
+        - Does the proof point in each asset feel real and defensible?
+        - Is the press release (if drafted) newsworthy enough to warrant distribution?
+
+        **How to respond:**
+        - `approve` — all assets cleared for staging
+        - `reject [asset]: [reason]` — revise specific asset before staging
+        - `modify [asset]: [change]` — targeted edit, then proceed
+      on_approve: continue
+      on_reject: return_to_asset_creation
+
+  # ─────────────────────────────────────────────────────────────
+  # T-2: STEP 5 — [GATE] Go/No-Go
+  # ─────────────────────────────────────────────────────────────
+  - id: go_no_go
+    name: "[GATE T-2] Final readiness confirmation — Go / No-Go"
+    agent: none
+    input:
+      source: multiple
+      refs:
+        - asset_creation.output
+        - asset_quality_gate.output
+      instructions: |
+        Run the final L2 readiness check and present the go/no-go status:
+
+        **L2 Go/No-Go Checklist:**
+        Check each item and mark Green / Amber / Red:
+        - [ ] Feature is live in production (not staging) — confirmed with product/engineering
+        - [ ] Customer email approved and staged to send on {{launch_date}}
+        - [ ] Blog post approved and staged to publish on {{launch_date}}
+        - [ ] Social posts approved and scheduled
+        - [ ] Sales brief sent to all AEs and SEs
+        - [ ] Support team briefed and help center article published or ready to publish
+        - [ ] Press release staged (if applicable)
+        - [ ] CMO informed
+
+        **Go criteria:** Proceed if all items are Green or Amber with confirmed path to Green by T-0.
+        **Delay criteria:** Delay if: customer email unapproved, blog has material error, feature not live in production.
+
+        Present the checklist status clearly and recommend: GO / DELAY / PARTIAL LAUNCH (specify which assets go and which wait).
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/t2-go-no-go.md"
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate T-2: Go / No-Go Decision
+
+        This is the single formal launch gate. Document your decision — it becomes part of the launch record.
+
+        **How to respond:**
+        - `go` — launch proceeds as planned on {{launch_date}}
+        - `delay [new date]: [reason]` — push launch date; note reason in launch brief
+        - `partial: [what ships / what waits]` — some assets launch on schedule, others are held
+      on_approve: continue
+      on_reject: stop
+
+  # ─────────────────────────────────────────────────────────────
+  # T-0: STEP 6 — Launch day execution log
+  # ─────────────────────────────────────────────────────────────
+  - id: launch_day
+    name: "T-0: Launch day execution log"
+    agent: none
+    input:
+      source: multiple
+      refs:
+        - go_no_go.output
+      instructions: |
+        Produce the launch day execution checklist and monitoring log:
+
+        **Launch Day Checklist (mark each as complete as it ships):**
+        - [ ] Blog post published: [URL]
+        - [ ] Customer email sent: [send time] [segment size]
+        - [ ] Social posts published: [LinkedIn URL] [Twitter URL]
+        - [ ] Press release distributed: [wire/service] (if applicable)
+        - [ ] Sales: "Feature is live" notification sent to AEs
+        - [ ] Help center article live: [URL]
+
+        **2-hour monitoring watch:**
+        After publish, monitor for 2 hours:
+        - Email bounces or complaints (>0.1% complaint rate = pause)
+        - Social comments indicating messaging confusion or factual error
+        - Any customer support contacts about the feature indicating a messaging issue
+        - Press pickup (if PR was distributed)
+
+        Note anything unusual. If a material issue surfaces (wrong claim in blog, feature not working), log it here and flag to PMM lead immediately.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/t0-launch-log.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # T+7: STEP 7 — Performance check
+  # ─────────────────────────────────────────────────────────────
+  - id: performance_check
+    name: "T+7: Performance check — 1-page note on launch results"
+    agent: growth-marketing/agents/performance-narrative-analyst.md
+    context:
+      - core/measurement/kpi-framework.md
+    input:
+      source: multiple
+      refs:
+        - launch_init.output
+        - launch_day.output
+      instructions: |
+        Produce a 1-page performance check note (not a full retro — that's for L1 launches only).
+
+        **For each success metric defined in the launch brief:**
+        - Target: [from launch brief]
+        - Actual: [from provided data or noted as "data not yet available"]
+        - Status: On track / Below target / Above target
+        - Hypothesis if off-target: 1 sentence
+
+        **Sales feedback check:**
+        Did the feature come up in any customer conversations this week? (Ask sales lead if data not provided.)
+        If yes: what was the reaction? Did the messaging land?
+
+        **Flag conditions:**
+        - Performance significantly below goal on any metric → document finding, flag for next positioning review
+        - Unexpectedly strong market response (press pickup, high inbound, strong sales feedback) → flag to CMO: consider whether this should have been L1
+
+        **Archive:**
+        Write the performance note to: core/system-intelligence/signal-log/{{run_id}}-l2-performance.md
+        Append to changelog: "[{{run_id}}] l2-launch-playbook: {{feature_name}} launched. T+7 performance check complete."
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/t7-performance-check.md"
+    gate:
+      type: none
+    checkpoint: true
+    checkpoint_message: |
+      T+7 checkpoint. The performance check is complete.
+
+      Review: runs/{{workflow}}/{{run_id}}/t7-performance-check.md
+
+      If any metric is significantly below goal, consider scheduling a positioning review session.
+      If performance was strong, consider whether to re-classify this feature as an L1 candidate for future reference.
+
+output:
+  summary: "L2 launch complete — {{feature_name}} launched on {{launch_date}}. Assets shipped, sales enabled, T+7 performance noted."
+  deliverables:
+    - path: "runs/{{workflow}}/{{run_id}}/t14-launch-brief.md"
+      label: "Launch brief"
+    - path: "runs/{{workflow}}/{{run_id}}/t10-messaging-and-enablement.md"
+      label: "Sales brief + battlecard update + customer email draft"
+    - path: "runs/{{workflow}}/{{run_id}}/t7-launch-assets.md"
+      label: "All launch assets (blog, social, press release if applicable)"
+    - path: "runs/{{workflow}}/{{run_id}}/t2-go-no-go.md"
+      label: "Go/No-Go decision record"
+    - path: "runs/{{workflow}}/{{run_id}}/t0-launch-log.md"
+      label: "Launch day execution log"
+    - path: "runs/{{workflow}}/{{run_id}}/t7-performance-check.md"
+      label: "T+7 performance check"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run summary"
+  deliver_to:
+    type: google_doc
+    name: "{{feature_name}} L2 Launch — {{run_id}}"
+    format: campaign_brief_doc
+    agent: growth-marketing/agents/doc-formatter-agent.md
+    source_steps: [launch_init, messaging_alignment, asset_creation]
+    tier0_delivery: artifact
+    mcp_required: google-workspace
+    fallback: |
+      Copy the launch brief and assets from the run directory into a Google Doc.
+      Doc name: "{{feature_name}} L2 Launch — {{run_id}}"
+
+writes_to_core:
+  - path: "core/system-intelligence/signal-log/"
+    written_by: performance_check
+    condition: always
+  - path: "core/system-intelligence/changelog.md"
+    written_by: performance_check
+    condition: always
+
+on_completion:
+  triggers:
+    - condition: "performance_check output contains 'significantly below goal'"
+      suggestion: "new-positioning-sprint"
+      message: "Launch performance was below goal on key metrics. Consider whether a positioning sprint is needed to sharpen the message before the next campaign."
+    - condition: "performance_check output contains 'unexpectedly strong'"
+      suggestion: null
+      message: "Strong launch signal — flag to CMO. Consider whether this feature warrants an L1 treatment retrospectively (press outreach, analyst briefings)."
+    - condition: "always"
+      suggestion: "new-competitor-battlecard"
+      message: "Battlecard was updated with the new feature. If competitors have responded to the launch, re-run new-competitor-battlecard to capture their counter-messaging."
+
+resume:
+  check_for_incomplete: true
+  incomplete_run_message: |
+    Found an incomplete l2-launch-playbook run from {{run_id}} ({{feature_name}}).
+    Completed: {{completed_steps}}. Resume from: {{next_step}}?
+    Note: this is a time-sensitive workflow — check the launch date ({{launch_date}}) before resuming.

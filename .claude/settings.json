@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "EnterPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'ENGINEERING STANDARDS REMINDER — before planning:\n• Root cause only. No bandaids.\n• Read all relevant code before designing a solution.\n• One right solution, not three adequate ones. Pick the approach that holds in 6 months and explain why.\n• User experience is the final arbiter of every decision.\n• Types everywhere. No any. Error states are first-class. Name things for what they do.\n• Prefer elegant. Complexity must earn its place.'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'DOC UPDATE REMINDER — if you shipped changes this session (new agents, YAML schemas, web app code, or system files):\n• Update the build state table in PLAN.md (mark completed items ✅, update phase status)\n• Update any stale sections of CLAUDE.md (routing table, delivery table, directory structure, build state)\n• Log any new core/ writes in core/system-intelligence/changelog.md\nIf docs are already current, no action needed.'"
+          }
+        ]
+      }
+    ]
+  }
+}

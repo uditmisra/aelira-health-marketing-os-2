@@ -1,0 +1,233 @@
+name: New Competitor Battlecard
+version: "1.0"
+description: Build a complete sales-ready battlecard for a competitor — positioning, strengths, weaknesses, traps to set, objection handlers, and discovery questions
+system: product-marketing
+trigger: manual
+
+global_context:
+  - core/brand/messaging-pillars.md
+  - core/icp/primary-icp.md
+  - core/competitive/landscape-overview.md
+
+inputs:
+  - name: competitor_name
+    description: "Name of the competitor to build a battlecard for"
+    required: true
+    example: "Ironclad"
+  - name: competitive_data_source
+    description: "Where to pull competitive data from. Options: existing_card (read from core/competitive/), web_research (use available web data), both"
+    required: false
+    default: "both"
+    example: "existing_card | web_research | both"
+  - name: priority_use_case
+    description: "Which deal scenario to optimize the battlecard for (optional — if omitted, covers all)"
+    required: false
+    default: "all"
+    example: "head-to-head replacement | greenfield evaluation | Ironclad renewal risk"
+  - name: sales_rep_level
+    description: "Intended audience for the battlecard"
+    required: false
+    default: "AE"
+    example: "AE | SDR | CSM | Full sales team"
+
+preflight:
+  validate_inputs:
+    - field: competitor_name
+      on_missing: stop
+      stop_message: "Competitor name is required. Which competitor is this battlecard for?"
+  context_check:
+    - path: "core/competitive/competitor-{{competitor_name_slug}}.md"
+      on_missing: warn
+      warn_message: "No existing competitor card found for {{competitor_name}}. Battlecard will be built from research only — consider populating core/competitive/ with verified data after this run."
+
+steps:
+  # ─────────────────────────────────────────────────────────────
+  # STEP 1: Research and competitive profile
+  # ─────────────────────────────────────────────────────────────
+  - id: competitive_research
+    name: Build competitive profile from available data
+    agent: product-marketing/market-intelligence/agents/competitive-monitor.md
+    context:
+      - "core/competitive/competitor-{{competitor_name_slug}}.md"   # existing card if present
+      - core/competitive/landscape-overview.md
+    input:
+      source: user_input
+      fields:
+        - competitor_name
+        - competitive_data_source
+      instructions: |
+        Build a structured competitive profile for {{competitor_name}}:
+
+        1. Company snapshot: funding stage, size, primary market, key customers, pricing tier
+        2. Product strengths (be honest — sales reps need to know what they're up against)
+        3. Product weaknesses (specific, not generic — "slow implementation" needs a number or a story)
+        4. Positioning strategy: how do they frame themselves? What's their primary narrative?
+        5. Pricing model: public pricing or signal-based estimate
+        6. Recent moves: last 90 days — product launches, pricing changes, messaging shifts, partnerships
+        7. Win/loss signals: any patterns visible from review sites (G2, Capterra), job postings, or competitor content
+
+        Flag any data that is over 90 days old or unverified.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-competitive-profile.md"
+      expected_structure: |
+        COMPETITOR: {{competitor_name}}
+        SNAPSHOT: [funding, size, market, pricing tier]
+        STRENGTHS: [honest, specific list]
+        WEAKNESSES: [specific, evidenced]
+        POSITIONING: [their narrative]
+        RECENT MOVES: [last 90 days]
+        DATA CONFIDENCE: [high/medium/low per section, with staleness flags]
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 2: Battlecard draft
+  # ─────────────────────────────────────────────────────────────
+  - id: battlecard_draft
+    name: Draft the full battlecard
+    agent: product-marketing/sales-enablement/agents/battlecard-writer.md
+    context:
+      - core/brand/messaging-pillars.md
+      - core/icp/primary-icp.md
+      - core/customer-voice/win-loss-interviews/
+    input:
+      source: multiple
+      refs:
+        - competitive_research.output
+      additional:
+        - source: user_input
+          fields:
+            - priority_use_case
+            - sales_rep_level
+      instructions: |
+        Build a sales-ready battlecard. Every section must be actionable — the rep should be able to read a line and immediately know what to say or do.
+
+        Required sections:
+        1. **One-liner** — how a rep should position us vs. {{competitor_name}} in one sentence
+        2. **When you're most likely to win** — 3 deal signals that predict a win against this competitor
+        3. **When you're most likely to lose** — 2 deal signals that predict a loss (reps need honesty)
+        4. **Their strengths (acknowledge them)** — 2–3 real strengths, one-liner response for each
+        5. **Their weaknesses (exploit them)** — 3–4 specific weaknesses with a discovery question for each
+        6. **Landmines to plant** — 3 questions to seed doubt early in the evaluation (before they go heads-down with the competitor)
+        7. **Objection handlers** — top 3 objections a rep will hear when competing with {{competitor_name}}, with a specific scripted response for each
+        8. **Proof point to use** — one specific customer story or data point that wins this head-to-head
+        9. **What to never say** — 2 things that will backfire in this competitive context
+
+        Format for the intended audience: {{sales_rep_level}}. AE format = full sections. SDR format = landmines + one-liner + top 2 objection handlers only.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-2-battlecard-draft.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 3: [GATE] PMM review
+  # ─────────────────────────────────────────────────────────────
+  - id: pmm_review
+    name: "[GATE] PMM review — validate claims and sharpen messaging"
+    agent: none
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: Battlecard PMM Review
+
+        Review the battlecard draft before it goes to the sales team.
+
+        **What to check:**
+        - Are all claims in Strengths/Weaknesses verified? Remove anything you can't back up.
+        - Do the landmine questions work in real discovery conversations?
+        - Are the objection handlers how your best reps would actually respond?
+        - Is the proof point specific enough to be believable?
+        - Are there any claims that could backfire if the competitor sees this?
+
+        **How to respond:**
+        - `approve` — battlecard is ready to publish
+        - `reject [section]: [reason]` — rewrite a specific section
+        - `modify [section]: [change]` — apply a targeted edit
+        - `approve with notes: [notes]` — approve but log feedback
+      on_approve: continue
+      on_reject: return_to_battlecard_draft
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 4: Format and deliver battlecard as Google Doc
+  # ─────────────────────────────────────────────────────────────
+  - id: deliver_battlecard
+    name: Format approved battlecard as Google Doc for sales team
+    agent: growth-marketing/agents/doc-formatter-agent.md
+    input:
+      source: multiple
+      refs:
+        - battlecard_draft.output
+      additional:
+        document_type: battlecard_doc
+        document_name: "{{competitor_name}} Battlecard — {{run_id}}"
+        intended_audience: "Sales team ({{sales_rep_level}})"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-4-doc-delivery.md"
+    deliver_to:
+      type: google_doc
+      name: "{{competitor_name}} Battlecard — {{run_id}}"
+      format: battlecard_doc
+      tier0_delivery: artifact  # Claude generates Doc as artifact → user opens in Google (one click)
+      mcp_required: google-workspace  # Tier 1: web app creates Doc via Google OAuth and captures URL
+      fallback: |
+        Copy the battlecard from step-2-battlecard-draft.md
+        and paste into a new Google Doc. Doc name: "{{competitor_name}} Battlecard — {{run_id}}"
+        Share with the sales team when done.
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 5: Update competitor card and archive
+  # ─────────────────────────────────────────────────────────────
+  - id: update_and_archive
+    name: Update competitor card in core/ and write to sales enablement archive
+    agent: system-intelligence/agents/system-updater.md
+    input:
+      source: multiple
+      refs:
+        - competitive_research.output
+        - battlecard_draft.output
+      instructions: |
+        1. Update (or create) core/competitive/competitor-{{competitor_name_slug}}.md with the research findings from Step 1.
+           Use commit message: "[core] update competitor-{{competitor_name_slug}}.md — battlecard run {{run_id}}"
+        2. Write the approved battlecard to product-marketing/sales-enablement/battlecards/battlecard-{{competitor_name_slug}}-{{run_id}}.md
+        3. Append to core/system-intelligence/changelog.md:
+           "[{{run_id}}] new-competitor-battlecard: {{competitor_name}} battlecard created. Core card updated."
+    actions:
+      - type: write_file
+        target: "product-marketing/sales-enablement/battlecards/battlecard-{{competitor_name_slug}}-{{run_id}}.md"
+        source: battlecard_draft.output
+      - type: write_file
+        target: "core/competitive/competitor-{{competitor_name_slug}}.md"
+        source: competitive_research.output
+      - type: append_to_file
+        target: "core/system-intelligence/changelog.md"
+        content: "[{{run_id}}] new-competitor-battlecard: {{competitor_name}} — battlecard built and competitor card updated"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-4-archive.md"
+    gate:
+      type: none
+
+output:
+  summary: "{{competitor_name}} battlecard — researched, drafted, PMM-approved, archived"
+  deliverables:
+    - path: "product-marketing/sales-enablement/battlecards/battlecard-{{competitor_name_slug}}-{{run_id}}.md"
+      label: "Sales-ready battlecard (published to sales enablement)"
+    - path: "core/competitive/competitor-{{competitor_name_slug}}.md"
+      label: "Updated competitor card in core/"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run summary"
+
+writes_to_core:
+  - path: "core/competitive/competitor-{{competitor_name_slug}}.md"
+    written_by: update_and_archive
+    condition: always
+  - path: "core/system-intelligence/changelog.md"
+    written_by: update_and_archive
+    condition: always
+
+on_completion:
+  triggers:
+    - condition: "competitive_research.data_confidence == low"
+      suggestion: null
+      message: "Low-confidence competitive data was used. Schedule a competitor deep-dive session within 30 days and re-run this workflow with fresher data."

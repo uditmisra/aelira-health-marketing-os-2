@@ -1,0 +1,277 @@
+name: Weekly System Review
+version: "1.0"
+description: 30-minute Monday meta-review — checks last week's signals, surfaces confirmed patterns, proposes agent/core improvements, updates health dashboard
+system: system-intelligence
+trigger: manual  # target: every Monday morning before any other marketing work begins
+
+global_context:
+  - core/system-intelligence/health-dashboard.md
+  - core/measurement/kpi-framework.md
+
+inputs:
+  - name: review_date
+    description: "The Monday date of this review (YYYY-MM-DD). Determines the 7-day signal window."
+    required: true
+    example: "2026-03-16"
+  - name: human_ratings
+    description: "Any quality ratings given to agent outputs this past week (1-5 scale, with agent name and brief note)"
+    required: false
+    default: "none_provided"
+    example: "competitive-monitor output: 4/5 — good signal classification but missed the LinkedIn job posting angle. creative-headline-agent: 3/5 — headlines were on-message but lacked specificity."
+  - name: broken_loop_observations
+    description: "Any loops you noticed weren't firing this week (e.g., 'no signal log entries from Google Ads despite campaign running')"
+    required: false
+    default: "none_observed"
+
+preflight:
+  validate_inputs:
+    - field: review_date
+      format: "YYYY-MM-DD"
+      on_missing: "stop"
+      stop_message: "Review date is required to define the 7-day signal window. Provide today's date (YYYY-MM-DD)."
+  signal_inventory_check:
+    path: "core/system-intelligence/signal-log/"
+    window_days: 7
+    minimum_entries: 3
+    on_below_minimum: |
+      Fewer than 3 signal log entries found in the past 7 days. The pattern analyst will still run
+      but expect mostly watch-list items rather than confirmed patterns. This is normal in the first
+      4 weeks of operation. Flag any broken loops as part of this review.
+
+steps:
+  # ─────────────────────────────────────────────────────────
+  # STEP 1: Signal inventory (5 minutes)
+  # ─────────────────────────────────────────────────────────
+  - id: signal_inventory
+    name: Count and categorize signal log entries from past 7 days
+    agent: none  # direct file operation — Claude reads signal-log/ directory
+    actions:
+      - type: read_directory
+        path: "core/system-intelligence/signal-log/"
+        filter: "files modified within 7 days of {{review_date}}"
+    instructions: |
+      Read all signal log files from the past 7 days.
+      Count entries by type: ad-performance | win-loss | human-rating | sales-feedback | workflow-run
+      For each type, check if it should have fired this week:
+      - ad-performance: should exist if any paid campaigns ran. If missing → broken loop flag.
+      - win-loss: should exist if any deals closed. Check with available CRM data or note as unknown.
+      - human-rating: optional but valuable. Note if none provided.
+      - sales-feedback: flag if none (ping sales team to contribute to field-notes this week).
+      - workflow-run: should exist for every workflow that ran. Missing = workflow ran but didn't log.
+
+      Also read human_ratings input if provided — treat as additional human-rating signals.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-signal-inventory.md"
+      expected_structure: |
+        SIGNAL INVENTORY: [total count] entries, [N] days reviewed
+        By type: [type]: [count] — [fired/missing/unknown]
+        BROKEN LOOPS DETECTED: [list or "none"]
+        HUMAN RATINGS THIS WEEK: [list or "none provided"]
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 2: Pattern analyst (15 minutes)
+  # ─────────────────────────────────────────────────────────
+  - id: pattern_analysis
+    name: Run pattern analyst on 7-day signal window
+    agent: system-intelligence/agents/pattern-analyst.md
+    context:
+      - core/system-intelligence/signal-log/    # all signal files
+      - core/system-intelligence/patterns/      # prior pattern analyses (trend context)
+    input:
+      source: multiple
+      refs:
+        - signal_inventory.output
+      additional:
+        - source: user_input
+          fields:
+            - human_ratings
+            - broken_loop_observations
+      instructions: |
+        Run in WEEKLY mode (7-day window, not quarterly).
+        Apply the 3-data-point threshold strictly:
+        - A pattern is CONFIRMED only if it appears in 3+ separate signal entries
+        - A pattern with 1-2 data points is a WATCH LIST item, not a proposal
+        At this stage of deployment (first 90 days), expect mostly watch-list items.
+        Do not manufacture proposals from insufficient data — "no confirmed patterns this week" is a valid and honest output.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-2-pattern-analysis.md"
+      format: markdown
+      expected_structure: |
+        CONFIRMED PATTERNS (3+ data points): [list with evidence, or "none this week"]
+        WATCH LIST (1-2 data points): [list with observations and what would confirm them]
+        BROKEN LOOP FLAGS: [from signal inventory + pattern analyst observations]
+        PROPOSED CHANGES (one change card per confirmed pattern, only if patterns exist):
+          Each card: file to change | section | before | after | why this improves output quality
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 3: Update health dashboard (5 minutes)
+  # ─────────────────────────────────────────────────────────
+  - id: update_health_dashboard
+    name: Update agent health statuses and core/ staleness flags
+    agent: system-intelligence/agents/system-updater.md
+    context:
+      - core/system-intelligence/health-dashboard.md
+    input:
+      source: multiple
+      refs:
+        - signal_inventory.output
+        - pattern_analysis.output
+      additional:
+        - source: user_input
+          fields:
+            - human_ratings
+      instructions: |
+        Update health-dashboard.md with:
+        1. For each agent that ran this week: update "last run" date. Update quality rating if human-rating exists.
+           Update status using this rule:
+           🟢 Sharp: rated 4-5/5, or no quality concerns
+           🟡 Drifting: rated 3/5 twice in last 4 weeks, OR a watch-list item exists for this agent
+           🔴 Degraded: rated below 3/5 in 2 of last 3 runs, OR a confirmed negative pattern
+
+        2. For core/ files: update "last updated" dates. Flag files past staleness threshold:
+           core/competitive/: stale after 60 days
+           core/icp/, core/brand/, core/customer-voice/: stale after 90 days
+
+        3. For feedback loops: mark each loop as:
+           Active: fired this week
+           Quiet: no signal this week (expected — not all loops fire weekly)
+           Broken: should have fired this week, didn't
+
+        Write the updated dashboard back to core/system-intelligence/health-dashboard.md.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-3-dashboard-update.md"
+      expected_structure: |
+        Summary of changes made to health-dashboard.md:
+        - Agents updated: [list]
+        - Status changes: [any agent whose status changed, with old → new]
+        - Stale files flagged: [list or none]
+        - Loop status changes: [any loop whose status changed]
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 4: [GATE] Human review of proposals (if any)
+  # ─────────────────────────────────────────────────────────
+  - id: proposal_review
+    name: "[GATE] Review and decide on change proposals (if any exist)"
+    agent: none
+    condition: "pattern_analysis.confirmed_patterns_count > 0"  # skip this step if no proposals
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: System Change Proposals
+
+        The pattern analyst found confirmed patterns and generated change proposals.
+        Review each change card (max 2 minutes each).
+
+        For each proposal, respond with one of:
+        - `approve [card number]` — apply the change
+        - `reject [card number]: [reason]` — do not apply; note why
+        - `modify [card number]: [specific change]` — apply a modified version
+
+        **Fast-approve scenarios:**
+        - A watch-list item now has its 3rd data point → straightforward approve
+        - A core/ file is flagged stale → approve the refresh task
+
+        **Pause-and-think scenarios:**
+        - Proposal touches core/brand/messaging-pillars.md → affects every agent; loop in PMM lead
+        - Proposal reverses a change from the last 30 days → investigate the contradiction first
+
+        After responding, I will apply approved changes and log them.
+
+        If no proposals: skip this step (type `skip` to confirm).
+      on_approve: apply_and_continue
+      on_skip: continue
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-4-proposal-decisions.md"
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 5: Apply changes and archive
+  # ─────────────────────────────────────────────────────────
+  - id: apply_and_archive
+    name: Apply approved changes and archive pattern analysis
+    agent: system-intelligence/agents/system-updater.md
+    input:
+      source: multiple
+      refs:
+        - proposal_review.output      # decisions: approve/reject/modify per card
+        - pattern_analysis.output     # the change cards themselves
+      instructions: |
+        For each approved card: apply the exact change specified (edit the agent file or core/ file).
+        For each rejected card: note reason in the archive but do not apply.
+        For each modified card: apply the modified version.
+        After applying all changes, confirm each with a git-style summary (file, section, change).
+    actions:
+      - type: write_file
+        target: "core/system-intelligence/patterns/patterns-{{review_date}}.md"
+        source: pattern_analysis.output
+        note: "Weekly pattern analysis archived"
+
+      - type: append_to_file
+        target: "core/system-intelligence/changelog.md"
+        content: |
+          [{{review_date}}] weekly-system-review: [N] proposals reviewed — [N] approved, [N] rejected
+          Applied changes: [list of files changed, or "none"]
+          Broken loops flagged: [list or none]
+
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-5-changes-applied.md"
+    gate:
+      type: none
+
+output:
+  summary: "Weekly system health check — updated health dashboard, pattern archive, applied improvements, broken loop flags"
+  deliverables:
+    - path: "core/system-intelligence/health-dashboard.md"
+      label: "Updated health dashboard (written directly to core/)"
+    - path: "runs/{{workflow}}/{{run_id}}/step-2-pattern-analysis.md"
+      label: "Pattern analysis (confirmed patterns + watch list)"
+    - path: "runs/{{workflow}}/{{run_id}}/step-5-changes-applied.md"
+      label: "Changes applied this week"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run Summary"
+  present_as: |
+    ## Weekly System Review Complete — {{review_date}}
+
+    SIGNAL INVENTORY: [N] entries this week
+    BROKEN LOOPS: [list or "none"]
+    CONFIRMED PATTERNS: [N] → [N] changes proposed
+    CHANGES APPLIED: [N]
+    HEALTH DASHBOARD: Updated
+    NEXT REVIEW: {{next_monday}}
+
+writes_to_core:
+  - path: "core/system-intelligence/health-dashboard.md"
+    written_by: update_health_dashboard
+    condition: always
+  - path: "core/system-intelligence/patterns/"
+    written_by: apply_and_archive
+    condition: always
+  - path: "core/system-intelligence/changelog.md"
+    written_by: apply_and_archive
+    condition: always
+  - path: "[agent files modified by approved proposals]"
+    written_by: apply_and_archive
+    condition: on_approved_proposals
+
+on_completion:
+  triggers:
+    - condition: "broken_loops count >= 2"
+      suggestion: null
+      message: "2+ broken loops detected. Recommend a focused 30-minute session to reconnect pipelines before next week's review — broken loops mean the system is running blind."
+    - condition: "any agent status == degraded"
+      suggestion: null
+      message: "One or more agents are 🔴 Degraded. Recommend addressing before running that agent again — degraded outputs compound over time."
+    - condition: "confirmed_patterns_count >= 4"
+      suggestion: "quarterly-system-audit"
+      message: "4+ confirmed patterns in a single week suggests significant market movement or skipped weekly reviews. Consider running the quarterly-system-audit to get a complete picture."
+
+resume:
+  check_for_incomplete: true
+  incomplete_run_message: |
+    Found an incomplete weekly-system-review run from {{run_id}}.
+    Completed: {{completed_steps}}. Resume from: {{next_step}}?

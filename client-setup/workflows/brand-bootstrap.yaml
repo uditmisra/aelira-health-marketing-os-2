@@ -1,0 +1,265 @@
+name: Brand Bootstrap
+version: "1.0"
+description: Extract brand assets from a website URL, build the email template and Figma spec, and commit everything to core/brand/assets.md. Run once during onboarding. Re-run whenever brand assets change.
+system: client-setup
+trigger: manual  # run during initial onboarding, and when brand identity changes
+
+global_context:
+  - CLAUDE.md  # company name and website URL
+
+inputs:
+  - name: website_url
+    description: "Primary website URL to extract brand assets from"
+    required: true
+    example: "https://spotdraft.com"
+  - name: secondary_urls
+    description: "Additional pages to scan for brand consistency (pricing, blog, login). Comma-separated."
+    required: false
+    default: ""
+    example: "https://spotdraft.com/pricing, https://spotdraft.com/blog"
+  - name: designer_skill_level
+    description: "Figma spec verbosity — adjusts how much explanation is included for the designer"
+    required: false
+    default: "intermediate"
+    example: "beginner | intermediate | expert"
+  - name: ad_formats
+    description: "Which ad formats to spec in the Figma template. Leave blank for all standard B2B formats."
+    required: false
+    default: "LinkedIn Single Image, LinkedIn Square, LinkedIn Carousel, Google Display"
+    example: "LinkedIn Single Image, LinkedIn Square"
+
+preflight:
+  validate_inputs:
+    - field: website_url
+      on_missing: stop
+      stop_message: "Website URL is required. Provide the primary marketing website to extract brand assets from."
+  context_check:
+    - path: core/brand/assets.md
+      on_missing: warn
+      warn_message: "core/brand/assets.md not found. It will be created from scratch by this workflow."
+
+steps:
+  # ─────────────────────────────────────────────────────────────
+  # STEP 1: Extract brand assets from website
+  # ─────────────────────────────────────────────────────────────
+  - id: brand_extraction
+    name: Extract colors, fonts, and logo from website
+    agent: client-setup/agents/brand-extractor.md
+    input:
+      source: user_input
+      fields:
+        - website_url
+        - secondary_urls
+      instructions: |
+        Extract all brand assets from {{website_url}}.
+        Include secondary pages if provided: {{secondary_urls}}
+
+        Produce:
+        1. Extraction report (confidence levels per field)
+        2. Pre-filled draft of core/brand/assets.md with extracted values substituted
+        3. Explicit list of any fields that could not be extracted (require manual entry)
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-brand-extraction.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 2: [GATE] Human review of extracted assets
+  # ─────────────────────────────────────────────────────────────
+  - id: extraction_review
+    name: "[GATE] Review extracted brand assets before committing to core/"
+    agent: none
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: Brand Asset Review
+
+        Brand assets have been extracted from {{website_url}}. Review before committing to core/brand/assets.md.
+
+        **Check the extraction report in step-1-brand-extraction.md:**
+
+        1. **Colors** — are the hex values correct? Compare against your brand guidelines or Figma file.
+           - Confidence: Low = verify before using. High = reliable.
+        2. **Fonts** — is the heading font and body font correct?
+           - If you use a paid font (e.g., GT Walsheim, Söhne), you'll need to supply the font name manually.
+        3. **Logo URL** — does the URL resolve to the correct logo? Is it the right variant for email use?
+           - If logo is inline SVG, you'll need to upload it to a CDN and provide the URL manually.
+        4. **Placeholders** — any fields marked `<PLACEHOLDER>` need manual entry before the template is usable.
+
+        **How to respond:**
+        - `approve` — extracted values are correct; proceed to build email template and Figma spec
+        - `modify [field]: [correct value]` — correct a specific field and proceed
+        - `reject: [reason]` — extraction is too incomplete; will require manual entry before proceeding
+
+        **Tip:** It's fine to approve with some placeholders remaining — the template will work with the fields that are populated and clearly flag the gaps.
+      on_approve: continue
+      on_reject: stop
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 3: Build email template
+  # ─────────────────────────────────────────────────────────────
+  - id: email_template
+    name: Build production-ready HTML email template
+    agent: client-setup/agents/email-template-builder.md
+    input:
+      source: multiple
+      refs:
+        - brand_extraction.output
+      additional:
+        template_types: "marketing, outbound"
+      instructions: |
+        Build two HTML email templates using the brand assets from the extraction report:
+
+        1. **Marketing template** — full branded HTML for newsletters, launch announcements, product updates
+        2. **Outbound template** — plain-text-style HTML for sales/SDR sequences (high deliverability)
+
+        Apply all extracted brand variables. Flag any placeholders that remain.
+        Include the variable legend and usage guide for each template.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-3-email-templates.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 4: Build Figma template spec
+  # ─────────────────────────────────────────────────────────────
+  - id: figma_spec
+    name: Produce Figma ad template specification
+    agent: client-setup/agents/figma-template-spec.md
+    input:
+      source: multiple
+      refs:
+        - brand_extraction.output
+      additional:
+        - source: user_input
+          fields:
+            - designer_skill_level
+            - ad_formats
+      instructions: |
+        Produce the Figma template spec for the following ad formats: {{ad_formats}}.
+        Designer skill level: {{designer_skill_level}}.
+
+        Use all brand variables from the extraction report.
+        Include the full layer naming convention, frame specs, auto-population setup guide, and delivery checklist.
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-4-figma-spec.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 5: [GATE] Review completed brand kit before committing
+  # ─────────────────────────────────────────────────────────────
+  - id: brand_kit_review
+    name: "[GATE] Review complete brand kit before writing to core/"
+    agent: none
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: Brand Kit Review
+
+        The complete brand kit is ready:
+        - `core/brand/assets.md` — populated with extracted + any modified values
+        - HTML email templates (marketing + outbound) — built and ready to paste into ESP
+        - Figma template spec — ready to hand off to designer
+
+        **Review the outputs:**
+        - Email template: does it look right? Will the brand colors and fonts render correctly?
+        - Figma spec: are the layer names correct? Is the designer handoff clear?
+        - assets.md: any remaining placeholders that need to be filled before agents can use it?
+
+        **How to respond:**
+        - `approve` — commit assets.md and archive outputs; brand bootstrap is complete
+        - `modify [section]: [change]` — adjust specific part before committing
+        - `reject: [reason]` — start over or pause for manual brand asset gathering
+      on_approve: continue
+      on_reject: stop
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 6: Commit to core/ and archive
+  # ─────────────────────────────────────────────────────────────
+  - id: commit_and_archive
+    name: Write approved assets to core/brand/assets.md and archive run
+    agent: system-intelligence/agents/system-updater.md
+    input:
+      source: multiple
+      refs:
+        - brand_extraction.output
+        - extraction_review.output
+        - email_template.output
+      instructions: |
+        1. Write the approved brand data to core/brand/assets.md:
+           - Substitute all confirmed brand variables into the assets.md template
+           - Update the Status section: Last updated = today, Populated by = brand-bootstrap, Completeness = partial or complete
+           - Commit message: "[core] populate brand/assets.md — brand-bootstrap run {{run_id}}"
+
+        2. Write email templates to client-setup/templates/:
+           - client-setup/templates/email-template-marketing.html (marketing template)
+           - client-setup/templates/email-template-outbound.html (outbound template)
+           Commit message: "[client-setup] add email templates — brand-bootstrap run {{run_id}}"
+
+        3. Write Figma spec to client-setup/templates/:
+           - client-setup/templates/figma-spec-{{run_id}}.md
+           Commit message: "[client-setup] add Figma template spec — brand-bootstrap run {{run_id}}"
+
+        4. Append to core/system-intelligence/changelog.md:
+           "[{{run_id}}] brand-bootstrap: core/brand/assets.md populated from {{website_url}}. Email templates and Figma spec archived."
+    actions:
+      - type: write_file
+        target: "core/brand/assets.md"
+        source: brand_extraction.output
+      - type: write_file
+        target: "client-setup/templates/email-template-marketing.html"
+        source: email_template.output
+      - type: append_to_file
+        target: "core/system-intelligence/changelog.md"
+        content: "[{{run_id}}] brand-bootstrap: core/brand/assets.md populated — {{website_url}}"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-6-commit-confirmation.md"
+    gate:
+      type: none
+
+output:
+  summary: "Brand bootstrap complete — core/brand/assets.md populated, email templates built, Figma spec ready for designer handoff"
+  deliver_to:
+    type: google_doc
+    name: "Brand Bootstrap — {{website_url}} — {{run_id}}"
+    format: campaign_brief_doc
+    agent: growth-marketing/agents/doc-formatter-agent.md
+    source_steps: [brand_extraction, email_template, figma_spec]
+    tier0_delivery: artifact
+    mcp_required: google-workspace
+    fallback: |
+      Copy the brand extraction report and Figma spec into a Google Doc for designer handoff.
+      Doc name: "Brand Bootstrap — {{website_url}} — {{run_id}}"
+  deliverables:
+    - path: "core/brand/assets.md"
+      label: "Brand asset registry (live in core/)"
+    - path: "client-setup/templates/email-template-marketing.html"
+      label: "HTML email template — marketing (paste into ESP)"
+    - path: "runs/{{workflow}}/{{run_id}}/step-4-figma-spec.md"
+      label: "Figma template spec (hand off to designer)"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run summary"
+
+writes_to_core:
+  - path: "core/brand/assets.md"
+    written_by: commit_and_archive
+    condition: on_human_approval
+  - path: "core/system-intelligence/changelog.md"
+    written_by: commit_and_archive
+    condition: always
+
+on_completion:
+  triggers:
+    - condition: "assets.md contains '<PLACEHOLDER>'"
+      suggestion: null
+      message: "Brand bootstrap complete, but assets.md still has unfilled placeholders. Fill them manually before running email-template-builder or figma-template-spec again. Common gaps: logo URL, paid font name, Figma file URL."
+    - condition: "always"
+      suggestion: "ad-copy-generation"
+      message: "Brand assets are live. You can now run ad-copy-generation — assets will use your brand colors and font specs automatically."
+
+resume:
+  check_for_incomplete: true
+  incomplete_run_message: |
+    Found an incomplete brand-bootstrap run from {{run_id}}.
+    Completed: {{completed_steps}}. Resume from: {{next_step}}?

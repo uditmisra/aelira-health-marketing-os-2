@@ -1,0 +1,14 @@
+{
+  "name": "marketing-os-figma-plugin",
+  "version": "1.0.0",
+  "description": "Mass ad creative generation from assembled ads table — Marketing OS",
+  "scripts": {
+    "build": "tsc && node scripts/bundle-ui.js",
+    "watch": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.97.0",
+    "typescript": "^5.3.3"
+  }
+}

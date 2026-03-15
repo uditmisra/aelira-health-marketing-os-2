@@ -1,0 +1,287 @@
+name: Weekly Performance Review
+version: "1.0"
+description: Full-channel weekly performance picture — what happened, why, what decisions need to be made, and the CMO-ready summary
+system: growth-marketing
+trigger: manual  # target: every Monday by 9:00 AM; prior week window = Mon–Sun
+
+global_context:
+  - core/measurement/kpi-framework.md
+  - core/measurement/attribution-model.md
+  - core/brand/messaging-pillars.md
+  - core/icp/primary-icp.md
+
+inputs:
+  - name: google_ads_export
+    description: "Prior week Google Ads performance export (CSV or pasted data): impressions, clicks, CTR, CPC, conversions, CPA, spend by campaign"
+    required: false
+    default: "not_provided"
+  - name: meta_export
+    description: "Prior week Meta Ads export: reach, frequency, CPM, CTR, CPC, CPL, conversions by ad set and creative"
+    required: false
+    default: "not_provided"
+  - name: linkedin_export
+    description: "Prior week LinkedIn Ads export: impressions, clicks, CTR, CPL, conversions, spend by campaign and creative"
+    required: false
+    default: "not_provided"
+  - name: email_export
+    description: "Prior week email performance: sends, opens, clicks, CTOR, unsubscribes, conversions"
+    required: false
+    default: "not_provided"
+  - name: crm_pipeline_data
+    description: "MQLs created, SQLs created, pipeline value created last week — attributed by channel if available (from HubSpot)"
+    required: false
+    default: "not_provided"
+  - name: prior_week_narrative
+    description: "Path to last week's performance narrative file (for week-over-week context)"
+    required: false
+    example: "growth-marketing/workflows/runs/weekly-performance-review/2026-03-05-090000/step-3-narrative.md"
+  - name: external_context
+    description: "Any known external factors this week: launches, competitor activity, seasonality, product changes, sales team feedback"
+    required: false
+    example: "Launched new LinkedIn A/B test on Tuesday. Sales team flagged Ironclad is running a price promotion."
+
+preflight:
+  flag_if_missing:
+    - fields: [google_ads_export, meta_export, linkedin_export]
+      threshold: all_missing
+      message: |
+        No channel data provided. This review will be limited without performance data.
+        If data exports are delayed, proceed — the review will flag which channels are absent.
+    - fields: [crm_pipeline_data]
+      message: "No CRM pipeline data provided. Pipeline metrics will show as unavailable. Recommend pulling from HubSpot before running."
+  validate_data_coverage:
+    minimum_channels: 1
+    on_zero_channels: "stop"
+    stop_message: "No channel data available at all. Collect at least one channel export before running the weekly review."
+
+steps:
+  # ─────────────────────────────────────────────────────────
+  # STEP 1: Campaign analytics — data processing and dashboard
+  # ─────────────────────────────────────────────────────────
+  - id: campaign_analytics
+    name: Run campaign analytics across all channels
+    agent: growth-marketing/agents/campaign-analytics-agent.md
+    context:
+      - core/measurement/reporting-cadence.md
+    input:
+      source: multiple
+      fields:
+        - google_ads_export
+        - meta_export
+        - linkedin_export
+        - email_export
+        - crm_pipeline_data
+      instructions: |
+        For any channel marked "not_provided", include it in the dashboard as "Data unavailable — [channel name]".
+        Do not skip the channel — its absence is itself a signal.
+        Use KPI targets from core/measurement/kpi-framework.md for pacing status (on track / below target / above target).
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-analytics-dashboard.md"
+      format: markdown
+      expected_structure: |
+        Executive dashboard table: channel | spend | leads/conversions | CPL/CPA | vs. prior week | vs. 4-week avg | pacing
+        Funnel conversion rates: MQL volume, MQL→SQL rate, pipeline created
+        Winners (top 3 performing elements with specific metrics)
+        Losers (bottom 3 with specific metrics)
+        Decisions-required list (numbered, each with: what, why it needs a decision, options)
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 2: Performance narrative — why things happened
+  # ─────────────────────────────────────────────────────────
+  - id: performance_narrative
+    name: Analyze performance and build narrative
+    agent: growth-marketing/agents/performance-narrative-analyst.md
+    input:
+      source: multiple
+      refs:
+        - campaign_analytics.output
+      additional:
+        - source: user_input
+          fields:
+            - prior_week_narrative
+            - external_context
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-2-narrative.md"
+      format: markdown
+      expected_structure: |
+        3 paragraphs — one per material change (only write a paragraph if the change is material; do not pad)
+        Each paragraph: what changed | why (hypothesis) | confidence level (High/Medium/Low) | recommended action
+        If fewer than 3 material changes exist, write fewer paragraphs — do not invent changes
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 3: [GATE] Growth marketing lead review
+  # ─────────────────────────────────────────────────────────
+  - id: growth_lead_review
+    name: "[GATE] Growth marketing lead validates analytics and narrative"
+    agent: none  # this is a pure human gate — no agent runs
+    input:
+      source: multiple
+      refs:
+        - campaign_analytics.output
+        - performance_narrative.output
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: Growth Marketing Lead Review
+
+        Before the CMO report is generated, review the analytics dashboard and narrative.
+
+        **Analytics dashboard** (step-1): Is the decisions-required list accurately framed?
+        Add any field context the data doesn't capture (e.g., "the LinkedIn CPL spike was due to our
+        target audience being out at a conference — not a creative problem").
+
+        **Narrative** (step-2): Are the hypotheses correct? Validate or correct against:
+        - Known campaign changes made this week
+        - Sales feedback received
+        - Product events or launches
+        - External market factors
+
+        Respond:
+        - `approve` — analytics and narrative look accurate, generate the CMO report
+        - `annotate: [your context additions]` — add your field context then approve
+        - `reject: [what's wrong]` — narrative hypothesis is wrong; specify correction
+
+        Your annotations will be injected into the CMO report generation step.
+      on_approve: continue
+      on_annotate: continue_with_annotation  # annotation is passed to next step
+      on_reject: retry_step  # re-runs performance_narrative with correction
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-3-lead-annotations.md"
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 4: CMO report generation
+  # ─────────────────────────────────────────────────────────
+  - id: cmo_report
+    name: Generate CMO weekly report
+    agent: growth-marketing/agents/weekly-cmio-report-generator.md
+    input:
+      source: multiple
+      refs:
+        - campaign_analytics.output
+        - performance_narrative.output
+        - growth_lead_review.output   # includes annotations if provided
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-4-cmo-report.md"
+      format: markdown
+      expected_structure: |
+        400 words maximum. Sections:
+        STATUS: one sentence — are we on track for the quarter?
+        WHAT'S WORKING: 2-3 bullets, specific with numbers
+        WHAT NEEDS ATTENTION: 2-3 bullets, specific with numbers, each with a recommended owner
+        DECISIONS NEEDED: numbered list — each decision stated as a clear choice (not "we should consider")
+        MARKET SIGNALS: 1-2 bullets of anything externally notable (competitor moves, category signals)
+    gate:
+      type: human_approval
+      present_as: |
+        ## CMO Report Ready
+
+        Review the 400-word CMO report (step-4). This goes to leadership.
+
+        Check:
+        1. Is the Status line accurate?
+        2. Are the Decisions clearly stated as actionable choices?
+        3. Anything confidential or premature that shouldn't go to this distribution?
+
+        Respond:
+        - `approve` — send it
+        - `modify: [specific change]` — targeted edit needed
+      on_approve: continue
+      on_reject: retry_step
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 5: Deliver CMO report to Google Doc + Slack
+  # ─────────────────────────────────────────────────────────
+  - id: deliver_report
+    name: Format and deliver CMO report to Google Doc and Slack
+    agent: growth-marketing/agents/doc-formatter-agent.md
+    input:
+      source: multiple
+      refs:
+        - cmo_report.output
+      additional:
+        document_type: cmo_report
+        document_name: "Marketing Performance — Week of {{run_id}}"
+        intended_audience: "CMO / Head of Marketing"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-5-doc-delivery.md"
+    deliver_to:
+      - type: google_doc
+        name: "Marketing Performance — Week of {{run_id}}"
+        format: cmo_report
+        tier0_delivery: artifact  # Claude generates Doc as artifact → user opens in Google (one click)
+        mcp_required: google-workspace  # Tier 1: web app creates Doc via Google OAuth and captures URL
+        fallback: |
+          Copy the formatted report from step-4-cmo-report.md
+          and paste into a new Google Doc. Doc name: "Marketing Performance — Week of {{run_id}}"
+      - type: slack
+        channel: "#marketing-performance"
+        slack_template: weekly_performance_summary
+        agent: growth-marketing/agents/slack-notifier-agent.md
+        mcp_required: slack
+        fallback: |
+          Slack MCP not connected. Post the status line and highlights from step-4-cmo-report.md
+          manually to #marketing-performance.
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────
+  # STEP 6: Log decisions and archive
+  # ─────────────────────────────────────────────────────────
+  - id: log_and_archive
+    name: Log decisions and archive run outputs
+    agent: none
+    actions:
+      - type: append_to_file
+        target: "core/system-intelligence/signal-log/{{run_id}}-weekly-performance.md"
+        content: |
+          # Signal: Weekly Performance — {{run_id}}
+          Channels reviewed: [from analytics dashboard]
+          Missing channels: [from analytics dashboard]
+          Winners this week: [from analytics dashboard top performers]
+          Decisions required: [count from decisions list]
+          Narrative confidence levels: [summary from narrative]
+
+      - type: append_to_file
+        target: "core/system-intelligence/changelog.md"
+        content: "[{{run_id}}] weekly-performance-review: run complete — [N] decisions logged"
+
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-5-log-confirmation.md"
+    gate:
+      type: none
+
+output:
+  summary: "CMO-ready weekly report + full channel dashboard + narrative + decisions log entry"
+  deliverables:
+    - path: "runs/{{workflow}}/{{run_id}}/step-4-cmo-report.md"
+      label: "CMO Weekly Report (distribute to leadership)"
+    - path: "runs/{{workflow}}/{{run_id}}/step-1-analytics-dashboard.md"
+      label: "Full Channel Dashboard (distribute to growth team)"
+    - path: "runs/{{workflow}}/{{run_id}}/step-2-narrative.md"
+      label: "Performance Narrative (with growth lead annotations)"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run Summary"
+
+writes_to_core:
+  - path: "core/system-intelligence/signal-log/"
+    written_by: log_and_archive
+    condition: always
+
+on_completion:
+  triggers:
+    - condition: "decisions_required count >= 3"
+      suggestion: "experiment-cycle"
+      message: "3+ decisions flagged this week. Want to run the experiment-cycle workflow to design structured tests for the highest-priority decisions?"
+    - condition: "any channel CPL > 150% of target for 2+ consecutive weeks"
+      suggestion: "creative-intelligence-sprint"
+      message: "A channel has been above CPL target for 2+ weeks. A creative-intelligence-sprint may surface better angles. Want to queue it?"
+
+resume:
+  check_for_incomplete: true
+  incomplete_run_message: |
+    Found an incomplete weekly-performance-review run from {{run_id}}.
+    Completed: {{completed_steps}}. Resume from: {{next_step}}?

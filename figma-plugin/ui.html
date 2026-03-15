@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Marketing OS — Ad Creative Generator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+      font-size: 13px;
+      color: #1a1a1a;
+      background: #fff;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .header {
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #e5e5e5;
+      flex-shrink: 0;
+    }
+    .header h1 { font-size: 14px; font-weight: 600; }
+    .header p { font-size: 11px; color: #888; margin-top: 2px; }
+
+    /* ── Scroll area ── */
+    .scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ── Section ── */
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #888;
+      margin-bottom: 6px;
+    }
+
+    /* ── Source tabs ── */
+    .tabs { display: flex; gap: 0; border: 1px solid #e5e5e5; border-radius: 6px; overflow: hidden; }
+    .tab {
+      flex: 1;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      background: #fff;
+      border: none;
+      cursor: pointer;
+      color: #666;
+      border-right: 1px solid #e5e5e5;
+      transition: background 0.1s;
+    }
+    .tab:last-child { border-right: none; }
+    .tab.active { background: #f0f0f0; color: #111; font-weight: 600; }
+    .tab:hover:not(.active) { background: #f7f7f7; }
+
+    /* ── Inputs ── */
+    input[type="text"], textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #111;
+      background: #fff;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.15s;
+      font-family: "SF Mono", "Fira Code", monospace;
+    }
+    input[type="text"]:focus, textarea:focus { border-color: #a0a0f0; }
+
+    textarea { min-height: 100px; }
+
+    .input-hint { font-size: 10px; color: #aaa; margin-top: 4px; line-height: 1.4; }
+
+    /* ── Sheets import ── */
+    .sheets-row { display: flex; gap: 8px; }
+    .sheets-row input { flex: 1; }
+    .btn-secondary {
+      padding: 8px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      background: #fff;
+      cursor: pointer;
+      white-space: nowrap;
+      color: #333;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .btn-secondary:hover { background: #f7f7f7; border-color: #ccc; }
+
+    /* ── Parse status ── */
+    .parse-status {
+      font-size: 11px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      display: none;
+    }
+    .parse-status.ok  { background: #f0faf3; color: #2a7a46; border: 1px solid #b5e4c7; display: block; }
+    .parse-status.err { background: #fff4f4; color: #c0392b; border: 1px solid #f5c6c6; display: block; }
+
+    /* ── Options ── */
+    .option-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .option-row input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; accent-color: #5b5bf0; }
+    .option-row label { font-size: 12px; cursor: pointer; color: #333; }
+
+    /* ── Frame scan ── */
+    .frame-scan {
+      background: #fafafa;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .frame-scan-header { display: flex; align-items: center; justify-content: space-between; }
+    .frame-scan-header span { font-size: 12px; font-weight: 500; color: #333; }
+    .frame-list { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+    .frame-badge {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 100px;
+      background: #eef2ff;
+      color: #4f46e5;
+      border: 1px solid #c7d2fe;
+    }
+    .frame-badge.missing {
+      background: #fff4f4;
+      color: #c0392b;
+      border-color: #f5c6c6;
+    }
+    .no-frames { font-size: 11px; color: #aaa; margin-top: 6px; }
+
+    /* ── Progress ── */
+    .progress-section { display: none; }
+    .progress-section.visible { display: block; }
+    .progress-bar-track {
+      height: 6px;
+      background: #f0f0f0;
+      border-radius: 100px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #5b5bf0;
+      border-radius: 100px;
+      transition: width 0.2s ease;
+      width: 0%;
+    }
+    .progress-label { font-size: 11px; color: #666; margin-top: 5px; }
+
+    /* ── Results ── */
+    .results { display: none; }
+    .results.visible { display: block; }
+    .results-box {
+      border-radius: 8px;
+      padding: 12px 14px;
+      border: 1px solid;
+    }
+    .results-box.success { background: #f0faf3; border-color: #b5e4c7; }
+    .results-box.has-errors { background: #fffaf0; border-color: #f5d9a0; }
+    .results-stat { font-size: 13px; font-weight: 600; color: #111; }
+    .results-sub { font-size: 11px; color: #666; margin-top: 2px; }
+    .error-list { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f0d080; }
+    .error-item { font-size: 11px; color: #b45309; margin-bottom: 4px; line-height: 1.4; }
+
+    /* ── Footer ── */
+    .footer {
+      padding: 12px 16px;
+      border-top: 1px solid #e5e5e5;
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .btn-primary {
+      flex: 1;
+      padding: 9px 16px;
+      background: #5b5bf0;
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-primary:hover:not(:disabled) { background: #4646d6; }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-cancel {
+      padding: 9px 14px;
+      border: 1px solid #e0e0e0;
+      border-radius: 7px;
+      font-size: 13px;
+      background: #fff;
+      cursor: pointer;
+      color: #555;
+    }
+    .btn-cancel:hover { background: #f7f7f7; }
+
+    /* ── Divider ── */
+    hr { border: none; border-top: 1px solid #f0f0f0; }
+
+    /* ── Top mode tabs ── */
+    .mode-tabs {
+      display: flex;
+      border-bottom: 1px solid #e5e5e5;
+      flex-shrink: 0;
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      background: #fff;
+      border: none;
+      cursor: pointer;
+      color: #888;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .mode-tab.active { color: #5b5bf0; border-bottom-color: #5b5bf0; font-weight: 600; }
+    .mode-tab:hover:not(.active) { color: #333; }
+
+    /* ── AI Images ── */
+    .img-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .img-card {
+      border: 2px solid transparent;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      position: relative;
+      background: #f5f5f5;
+    }
+    .img-card.selected { border-color: #5b5bf0; }
+    .img-card img {
+      width: 100%;
+      aspect-ratio: 16/9;
+      object-fit: cover;
+      display: block;
+    }
+    .img-card-label {
+      font-size: 9px;
+      color: #666;
+      padding: 3px 5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      background: #fff;
+      border-top: 1px solid #e5e5e5;
+    }
+    .img-card .check {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 18px;
+      height: 18px;
+      background: #5b5bf0;
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 10px;
+      font-weight: bold;
+    }
+    .img-card.selected .check { display: flex; }
+
+    .img-select-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #666;
+    }
+    .img-select-bar a {
+      cursor: pointer;
+      color: #5b5bf0;
+      text-decoration: underline;
+      font-size: 11px;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Marketing OS</h1>
+  <p>Ad copy → Figma variants &amp; AI-generated images from your runs</p>
+</div>
+
+<!-- ── Top-level mode tabs ── -->
+<div class="mode-tabs">
+  <button class="mode-tab active" data-mode="adcopy">Ad Copy</button>
+  <button class="mode-tab" data-mode="images">AI Images</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ AD COPY MODE -->
+<div id="mode-adcopy">
+<div class="scroll">
+
+  <!-- ── Data source ── -->
+  <div>
+    <div class="section-label">Data source</div>
+    <div class="tabs">
+      <button class="tab active" data-tab="paste">Paste TSV / CSV</button>
+      <button class="tab" data-tab="sheets">Google Sheets URL</button>
+    </div>
+  </div>
+
+  <!-- Paste tab -->
+  <div id="tab-paste">
+    <div class="section-label">Assembled ads table</div>
+    <textarea
+      id="tsv-input"
+      placeholder="platform&#9;format&#9;headline&#9;body_copy&#9;cta&#9;cta_url&#9;headline_chars&#9;body_chars&#9;pillar&#9;frame_type&#9;quality_status&#9;run_id
+LinkedIn Ads&#9;linkedin_single_image&#9;Close contracts in hours…&#9;SpotDraft cuts review time…&#9;Book a demo&#9;https://spotdraft.com/demo&#9;28&#9;42&#9;Speed Without Sacrifice&#9;problem-led&#9;approved&#9;2026-03-14-001"
+      rows="6"
+    ></textarea>
+    <p class="input-hint">
+      Paste the TSV from <code>step-4-assembled-ads.md</code> or copy from the Google Sheet.
+      Tab-separated. First row must be the header.
+    </p>
+    <button class="btn-secondary" id="btn-parse" style="margin-top:8px">Parse data</button>
+    <div class="parse-status" id="parse-status"></div>
+  </div>
+
+  <!-- Sheets tab -->
+  <div id="tab-sheets" class="hidden">
+    <div class="section-label">Google Sheets URL</div>
+    <div class="sheets-row">
+      <input type="text" id="sheets-url" placeholder="https://docs.google.com/spreadsheets/d/…" />
+      <button class="btn-secondary" id="btn-import">Import</button>
+    </div>
+    <p class="input-hint">
+      The sheet must be shared ("Anyone with the link can view").
+      The plugin reads the first sheet tab.
+    </p>
+    <div class="parse-status" id="sheets-status"></div>
+  </div>
+
+  <hr />
+
+  <!-- ── Options ── -->
+  <div>
+    <div class="section-label">Options</div>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <div class="option-row">
+        <input type="checkbox" id="include-conditional" />
+        <label for="include-conditional">Include conditional passes (not just "approved")</label>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:4px">Page / layer prefix</div>
+        <input type="text" id="page-prefix" value="Marketing OS Ads" placeholder="Marketing OS Ads — 2026-03-14" />
+        <p class="input-hint">Output frames are placed on pages named "{prefix} — {Format}".</p>
+      </div>
+    </div>
+  </div>
+
+  <hr />
+
+  <!-- ── Frame scan ── -->
+  <div class="frame-scan">
+    <div class="frame-scan-header">
+      <span>Master frames in this file</span>
+      <button class="btn-secondary" id="btn-scan" style="font-size:11px;padding:4px 8px;">Scan</button>
+    </div>
+    <div id="frame-list-container">
+      <p class="no-frames">Click Scan to detect [Master] frames in this Figma file.</p>
+    </div>
+  </div>
+
+  <!-- ── Progress ── -->
+  <div class="progress-section" id="progress-section">
+    <div class="section-label">Generating</div>
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progress-bar"></div>
+    </div>
+    <div class="progress-label" id="progress-label">Starting…</div>
+  </div>
+
+  <!-- ── Results ── -->
+  <div class="results" id="results-section">
+    <div class="results-box" id="results-box">
+      <div class="results-stat" id="results-stat"></div>
+      <div class="results-sub" id="results-sub"></div>
+      <div class="error-list hidden" id="error-list"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Footer ── -->
+<div class="footer">
+  <button class="btn-primary" id="btn-generate" disabled>Generate variants</button>
+  <button class="btn-cancel" id="btn-cancel">Cancel</button>
+</div>
+</div><!-- end #mode-adcopy -->
+
+<!-- ══════════════════════════════════════════════════════════ AI IMAGES MODE -->
+<div id="mode-images" class="hidden" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+
+  <div class="scroll">
+
+    <!-- Config -->
+    <div>
+      <div class="section-label">Web app connection</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div>
+          <input type="text" id="img-app-url" placeholder="https://your-app.vercel.app" />
+          <p class="input-hint">Your Marketing OS web app URL (no trailing slash).</p>
+        </div>
+        <div>
+          <input type="text" id="img-api-key" placeholder="Plugin API key from Settings" style="font-family:'SF Mono','Fira Code',monospace;" />
+          <p class="input-hint">Found in the web app under Settings → Plugin API Key.</p>
+        </div>
+      </div>
+    </div>
+
+    <hr />
+
+    <!-- Run path -->
+    <div>
+      <div class="section-label">Run path</div>
+      <input type="text" id="img-run-path" placeholder="e.g. product-marketing/market-intelligence/runs/weekly-competitive-pulse/2026-03-14-001" />
+      <p class="input-hint">Copy from the run URL in the web app, or paste the folder path from GitHub.</p>
+    </div>
+
+    <!-- Optional: repo override -->
+    <div>
+      <div class="section-label" style="margin-bottom:4px;">Repository override <span style="font-weight:400;text-transform:none;font-size:10px;color:#aaa">(leave blank to use web app default)</span></div>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="img-owner" placeholder="owner" style="flex:1;font-family:monospace;" />
+        <span style="line-height:34px;color:#aaa">/</span>
+        <input type="text" id="img-repo" placeholder="repo" style="flex:2;font-family:monospace;" />
+      </div>
+    </div>
+
+    <button class="btn-secondary" id="btn-fetch-images">Fetch images</button>
+    <div class="parse-status hidden" id="img-fetch-status"></div>
+
+    <hr />
+
+    <!-- Image grid -->
+    <div id="img-grid-section" class="hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div class="section-label" style="margin-bottom:0">Images from this run</div>
+        <div class="img-select-bar">
+          <span id="img-selected-count">0 selected</span>
+          <a id="img-select-all">all</a>
+          <a id="img-select-none">none</a>
+        </div>
+      </div>
+      <div class="img-grid" id="img-grid"></div>
+      <p class="input-hint" style="margin-top:6px;">
+        Select images to apply. In Figma, select target frames first — each image applies to one frame in order.
+        If no frames are selected, new frames are created.
+      </p>
+    </div>
+
+    <!-- Apply progress -->
+    <div class="progress-section" id="img-progress-section">
+      <div class="section-label">Applying to Figma</div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="img-progress-bar"></div>
+      </div>
+      <div class="progress-label" id="img-progress-label">Starting…</div>
+    </div>
+
+    <!-- Apply results -->
+    <div class="results" id="img-results-section">
+      <div class="results-box" id="img-results-box">
+        <div class="results-stat" id="img-results-stat"></div>
+        <div class="results-sub" id="img-results-sub"></div>
+        <div class="error-list hidden" id="img-error-list"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <button class="btn-primary" id="btn-apply-images" disabled>Apply to Figma</button>
+    <button class="btn-cancel" id="btn-cancel-images">Cancel</button>
+  </div>
+
+</div><!-- end #mode-images -->
+
+<script>
+  // ─── State ────────────────────────────────────────────────────────────────
+  let parsedRows = [];
+  let isRunning = false;
+
+  const REQUIRED_COLUMNS = [
+    "platform", "format", "headline", "body_copy", "cta",
+    "cta_url", "headline_chars", "body_chars", "pillar",
+    "frame_type", "quality_status", "run_id"
+  ];
+
+  // ─── Tab switching ─────────────────────────────────────────────────────────
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      const target = tab.dataset.tab;
+      document.getElementById("tab-paste").classList.toggle("hidden", target !== "paste");
+      document.getElementById("tab-sheets").classList.toggle("hidden", target !== "sheets");
+    });
+  });
+
+  // ─── Parse TSV / CSV ───────────────────────────────────────────────────────
+  document.getElementById("btn-parse").addEventListener("click", () => {
+    const raw = document.getElementById("tsv-input").value.trim();
+    if (!raw) { showParseStatus("error", "No data pasted."); return; }
+    const result = parseTableText(raw);
+    if (result.error) { showParseStatus("error", result.error); parsedRows = []; }
+    else {
+      parsedRows = result.rows;
+      const approved = parsedRows.filter((r) => r.quality_status === "approved").length;
+      const conditional = parsedRows.filter((r) => r.quality_status === "conditional").length;
+      showParseStatus("ok",
+        `${parsedRows.length} row(s) parsed — ${approved} approved, ${conditional} conditional.`
+      );
+    }
+    updateGenerateButton();
+  });
+
+  // ─── Google Sheets import ──────────────────────────────────────────────────
+  document.getElementById("btn-import").addEventListener("click", async () => {
+    const url = document.getElementById("sheets-url").value.trim();
+    const sheetsStatus = document.getElementById("sheets-status");
+    sheetsStatus.className = "parse-status";
+    sheetsStatus.style.display = "none";
+
+    const sheetId = extractSheetId(url);
+    if (!sheetId) {
+      showSheetsStatus("error", "Could not parse sheet ID from URL. Use a full Google Sheets URL.");
+      return;
+    }
+
+    showSheetsStatus("ok", "Importing…");
+
+    try {
+      // Export as CSV via the public export URL — requires the sheet to be publicly shared
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`;
+      const res = await fetch(csvUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status} — check the sheet is shared publicly`);
+      const csv = await res.text();
+      const result = parseTableText(csv);
+      if (result.error) { showSheetsStatus("error", result.error); parsedRows = []; }
+      else {
+        parsedRows = result.rows;
+        const approved = parsedRows.filter((r) => r.quality_status === "approved").length;
+        const conditional = parsedRows.filter((r) => r.quality_status === "conditional").length;
+        showSheetsStatus("ok",
+          `${parsedRows.length} row(s) imported — ${approved} approved, ${conditional} conditional.`
+        );
+      }
+    } catch (err) {
+      showSheetsStatus("error", err.message);
+      parsedRows = [];
+    }
+
+    updateGenerateButton();
+  });
+
+  // ─── Scan frames ───────────────────────────────────────────────────────────
+  document.getElementById("btn-scan").addEventListener("click", () => {
+    parent.postMessage({ pluginMessage: { type: "SCAN_FRAMES" } }, "*");
+  });
+
+  // ─── Generate ─────────────────────────────────────────────────────────────
+  document.getElementById("btn-generate").addEventListener("click", () => {
+    if (isRunning || parsedRows.length === 0) return;
+    isRunning = true;
+    updateGenerateButton();
+
+    // Reset results
+    document.getElementById("results-section").classList.remove("visible");
+    document.getElementById("progress-section").classList.add("visible");
+    setProgress(0, parsedRows.length, "Starting…");
+
+    const includeConditional = document.getElementById("include-conditional").checked;
+    const pagePrefix = document.getElementById("page-prefix").value.trim() || "Marketing OS Ads";
+
+    parent.postMessage({
+      pluginMessage: {
+        type: "GENERATE",
+        rows: parsedRows,
+        includeConditional,
+        pagePrefix,
+      }
+    }, "*");
+  });
+
+  // ─── Cancel ────────────────────────────────────────────────────────────────
+  document.getElementById("btn-cancel").addEventListener("click", () => {
+    parent.postMessage({ pluginMessage: { type: "CANCEL" } }, "*");
+  });
+
+  // ─── Messages from plugin code (ad copy mode) ─────────────────────────────
+  // Note: the unified handler is set up in the AI Images section below,
+  // which delegates to these helpers. No separate window.onmessage here.
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  function parseTableText(text) {
+    // Auto-detect delimiter: tab or comma
+    const firstLine = text.split("\n")[0];
+    const delim = firstLine.includes("\t") ? "\t" : ",";
+    const lines = text.split("\n").map((l) => l.trimEnd()).filter(Boolean);
+    if (lines.length < 2) return { error: "Need at least a header row and one data row.", rows: [] };
+
+    const headers = lines[0].split(delim).map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
+
+    // Check required columns
+    const missing = REQUIRED_COLUMNS.filter((col) => !headers.includes(col));
+    if (missing.length > 0) {
+      return { error: `Missing required columns: ${missing.join(", ")}`, rows: [] };
+    }
+
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cells = splitCSVLine(lines[i], delim);
+      if (cells.length < headers.length) continue; // skip short rows
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = cells[idx]?.trim() ?? ""; });
+      rows.push(row);
+    }
+
+    if (rows.length === 0) return { error: "Parsed 0 data rows. Check your data.", rows: [] };
+    return { rows };
+  }
+
+  function splitCSVLine(line, delim) {
+    if (delim === "\t") return line.split("\t");
+    // Simple CSV split respecting quoted fields
+    const result = [];
+    let cur = "";
+    let inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQuote = !inQuote; }
+      else if (ch === "," && !inQuote) { result.push(cur); cur = ""; }
+      else { cur += ch; }
+    }
+    result.push(cur);
+    return result;
+  }
+
+  function extractSheetId(url) {
+    const m = url.match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    return m ? m[1] : null;
+  }
+
+  function setProgress(current, total, label) {
+    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+    document.getElementById("progress-bar").style.width = pct + "%";
+    document.getElementById("progress-label").textContent = `${current} / ${total} — ${label}`;
+  }
+
+  function renderFrameList(frames) {
+    const EXPECTED = [
+      "[Master] LinkedIn Single Image",
+      "[Master] LinkedIn Square",
+      "[Master] LinkedIn Carousel",
+      "[Master] Google Display 300x250",
+      "[Master] Google Display 728x90",
+    ];
+
+    const container = document.getElementById("frame-list-container");
+    if (frames.length === 0) {
+      container.innerHTML = '<p class="no-frames">No [Master] frames found. Add frames with names like "[Master] LinkedIn Single Image" to your Figma file.</p>';
+      return;
+    }
+
+    const html = frames.map((name) => `<span class="frame-badge">${name}</span>`).join("") +
+      EXPECTED.filter((n) => !frames.includes(n))
+        .map((n) => `<span class="frame-badge missing">${n} ✕</span>`).join("");
+
+    container.innerHTML = `<div class="frame-list">${html}</div>
+      <p class="input-hint" style="margin-top:6px">Green = found. Red = expected but missing.</p>`;
+  }
+
+  function showResults(generated, skipped, errors) {
+    const section = document.getElementById("results-section");
+    const box = document.getElementById("results-box");
+    const stat = document.getElementById("results-stat");
+    const sub = document.getElementById("results-sub");
+    const errList = document.getElementById("error-list");
+
+    stat.textContent = `${generated} variant${generated !== 1 ? "s" : ""} generated`;
+    sub.textContent = skipped > 0
+      ? `${skipped} row(s) skipped — check errors below`
+      : "All rows processed. Check the output pages in your Figma file.";
+
+    if (errors.length > 0) {
+      box.className = "results-box has-errors";
+      errList.classList.remove("hidden");
+      errList.innerHTML = errors.map((e) => `<div class="error-item">⚠ ${e}</div>`).join("");
+    } else {
+      box.className = "results-box success";
+      errList.classList.add("hidden");
+    }
+
+    section.classList.add("visible");
+  }
+
+  function showParseStatus(type, msg) {
+    const el = document.getElementById("parse-status");
+    el.textContent = msg;
+    el.className = "parse-status " + (type === "ok" ? "ok" : "err");
+  }
+
+  function showSheetsStatus(type, msg) {
+    const el = document.getElementById("sheets-status");
+    el.textContent = msg;
+    el.className = "parse-status " + (type === "ok" ? "ok" : "err");
+  }
+
+  function updateGenerateButton() {
+    const btn = document.getElementById("btn-generate");
+    btn.disabled = isRunning || parsedRows.length === 0;
+    btn.textContent = isRunning ? "Generating…" : `Generate variants`;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AI IMAGES MODE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  let fetchedImages = [];     // Array of RunImage objects from the API
+  let selectedIndices = new Set(); // Which images are selected for apply
+  let isApplying = false;
+
+  // ── Mode switching ─────────────────────────────────────────────────────────
+  document.querySelectorAll(".mode-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".mode-tab").forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      const mode = tab.dataset.mode;
+      document.getElementById("mode-adcopy").classList.toggle("hidden", mode !== "adcopy");
+      document.getElementById("mode-images").classList.toggle("hidden", mode !== "images");
+    });
+  });
+
+  // ── Persist config to localStorage ────────────────────────────────────────
+  const LS_URL = "mkt_os_app_url";
+  const LS_KEY = "mkt_os_plugin_key";
+  const savedUrl = localStorage.getItem(LS_URL) || "";
+  const savedKey = localStorage.getItem(LS_KEY) || "";
+  if (savedUrl) document.getElementById("img-app-url").value = savedUrl;
+  if (savedKey) document.getElementById("img-api-key").value = savedKey;
+
+  document.getElementById("img-app-url").addEventListener("change", (e) => {
+    localStorage.setItem(LS_URL, e.target.value.trim());
+  });
+  document.getElementById("img-api-key").addEventListener("change", (e) => {
+    localStorage.setItem(LS_KEY, e.target.value.trim());
+  });
+
+  // ── Fetch images ───────────────────────────────────────────────────────────
+  document.getElementById("btn-fetch-images").addEventListener("click", async () => {
+    const appUrl = document.getElementById("img-app-url").value.trim().replace(/\/$/, "");
+    const apiKey = document.getElementById("img-api-key").value.trim();
+    const runPath = document.getElementById("img-run-path").value.trim();
+    const owner = document.getElementById("img-owner").value.trim();
+    const repo = document.getElementById("img-repo").value.trim();
+
+    if (!appUrl) { showImgStatus("err", "Enter your web app URL first."); return; }
+    if (!apiKey) { showImgStatus("err", "Enter your plugin API key first."); return; }
+    if (!runPath) { showImgStatus("err", "Enter a run path."); return; }
+
+    showImgStatus("ok", "Fetching…");
+    document.getElementById("btn-fetch-images").disabled = true;
+
+    try {
+      const params = new URLSearchParams({ runPath, key: apiKey });
+      if (owner) params.set("owner", owner);
+      if (repo)  params.set("repo", repo);
+
+      const res = await fetch(`${appUrl}/api/runs/images?${params}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      fetchedImages = data.images || [];
+
+      if (fetchedImages.length === 0) {
+        showImgStatus("err", "No images found for this run. Generate some first via the Creative tab.");
+        document.getElementById("img-grid-section").classList.add("hidden");
+      } else {
+        showImgStatus("ok", `${fetchedImages.length} image${fetchedImages.length !== 1 ? "s" : ""} found.`);
+        renderImageGrid();
+        document.getElementById("img-grid-section").classList.remove("hidden");
+      }
+    } catch (err) {
+      showImgStatus("err", err.message);
+    } finally {
+      document.getElementById("btn-fetch-images").disabled = false;
+      updateApplyButton();
+    }
+  });
+
+  // ── Image grid rendering ───────────────────────────────────────────────────
+  function renderImageGrid() {
+    selectedIndices.clear();
+    const grid = document.getElementById("img-grid");
+    grid.innerHTML = fetchedImages.map((img, i) => {
+      const label = img.template || `Image ${i + 1}`;
+      const date = img.generatedAt ? new Date(img.generatedAt).toLocaleDateString() : "";
+      return `
+        <div class="img-card" data-idx="${i}" title="${escapeHtml(img.prompt || "")}">
+          <img src="${img.url}" alt="${escapeHtml(label)}" loading="lazy" />
+          <div class="img-card-label">${escapeHtml(label)} ${date ? `· ${date}` : ""}</div>
+          <div class="check">✓</div>
+        </div>`;
+    }).join("");
+
+    grid.querySelectorAll(".img-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        const idx = parseInt(card.dataset.idx, 10);
+        if (selectedIndices.has(idx)) {
+          selectedIndices.delete(idx);
+          card.classList.remove("selected");
+        } else {
+          selectedIndices.add(idx);
+          card.classList.add("selected");
+        }
+        updateImgSelectedCount();
+        updateApplyButton();
+      });
+    });
+
+    updateImgSelectedCount();
+  }
+
+  document.getElementById("img-select-all").addEventListener("click", () => {
+    selectedIndices = new Set(fetchedImages.map((_, i) => i));
+    document.querySelectorAll(".img-card").forEach((c) => c.classList.add("selected"));
+    updateImgSelectedCount();
+    updateApplyButton();
+  });
+
+  document.getElementById("img-select-none").addEventListener("click", () => {
+    selectedIndices.clear();
+    document.querySelectorAll(".img-card").forEach((c) => c.classList.remove("selected"));
+    updateImgSelectedCount();
+    updateApplyButton();
+  });
+
+  function updateImgSelectedCount() {
+    document.getElementById("img-selected-count").textContent =
+      `${selectedIndices.size} selected`;
+  }
+
+  // ── Apply images ───────────────────────────────────────────────────────────
+  document.getElementById("btn-apply-images").addEventListener("click", async () => {
+    if (isApplying || selectedIndices.size === 0) return;
+    isApplying = true;
+    updateApplyButton();
+
+    document.getElementById("img-results-section").classList.remove("visible");
+    document.getElementById("img-progress-section").classList.add("visible");
+    document.getElementById("img-progress-label").textContent = "Decoding images…";
+    document.getElementById("img-progress-bar").style.width = "0%";
+
+    const selected = Array.from(selectedIndices).sort((a, b) => a - b);
+
+    try {
+      const imagePayloads = [];
+      for (let i = 0; i < selected.length; i++) {
+        const img = fetchedImages[selected[i]];
+        // Strip data URL prefix → base64 → ArrayBuffer
+        const base64 = img.url.split(",")[1];
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
+        imagePayloads.push({
+          bytes: bytes.buffer,
+          mimeType: img.mimeType,
+          name: img.template || `AI Image ${i + 1}`,
+        });
+
+        const pct = Math.round(((i + 1) / selected.length) * 50);
+        document.getElementById("img-progress-bar").style.width = pct + "%";
+        document.getElementById("img-progress-label").textContent =
+          `Decoding ${i + 1} / ${selected.length}…`;
+      }
+
+      document.getElementById("img-progress-label").textContent = "Sending to Figma…";
+      document.getElementById("img-progress-bar").style.width = "60%";
+
+      parent.postMessage({
+        pluginMessage: { type: "APPLY_IMAGES", images: imagePayloads }
+      }, "*");
+      // Result handled in window.onmessage
+    } catch (err) {
+      isApplying = false;
+      document.getElementById("img-progress-section").classList.remove("visible");
+      showImgStatus("err", `Failed to decode images: ${err.message}`);
+      updateApplyButton();
+    }
+  });
+
+  document.getElementById("btn-cancel-images").addEventListener("click", () => {
+    parent.postMessage({ pluginMessage: { type: "CANCEL" } }, "*");
+  });
+
+  // ── Handle IMAGES_APPLIED from plugin thread ───────────────────────────────
+  const originalOnMessage = window.onmessage;
+  window.onmessage = (event) => {
+    const msg = event.data.pluginMessage;
+    if (!msg) return;
+
+    if (msg.type === "IMAGES_APPLIED") {
+      isApplying = false;
+      document.getElementById("img-progress-section").classList.remove("visible");
+      document.getElementById("img-progress-bar").style.width = "100%";
+      showImgApplyResults(msg.applied, msg.errors);
+      updateApplyButton();
+      return;
+    }
+
+    // Delegate all other messages to the existing handler
+    if (msg.type === "FRAMES_FOUND") {
+      renderFrameList(msg.frames);
+    } else if (msg.type === "PROGRESS") {
+      setProgress(msg.current, msg.total, msg.label);
+    } else if (msg.type === "DONE") {
+      isRunning = false;
+      document.getElementById("progress-section").classList.remove("visible");
+      showResults(msg.generated, msg.skipped, msg.errors);
+      updateGenerateButton();
+    } else if (msg.type === "ERROR") {
+      isRunning = false;
+      isApplying = false;
+      document.getElementById("progress-section").classList.remove("visible");
+      document.getElementById("img-progress-section").classList.remove("visible");
+      showParseStatus("error", msg.message);
+      updateGenerateButton();
+      updateApplyButton();
+    }
+  };
+
+  // ── AI Images helpers ──────────────────────────────────────────────────────
+  function showImgStatus(type, msg) {
+    const el = document.getElementById("img-fetch-status");
+    el.textContent = msg;
+    el.className = "parse-status " + (type === "ok" ? "ok" : "err");
+    el.classList.remove("hidden");
+  }
+
+  function updateApplyButton() {
+    const btn = document.getElementById("btn-apply-images");
+    btn.disabled = isApplying || selectedIndices.size === 0;
+    btn.textContent = isApplying ? "Applying…" : `Apply ${selectedIndices.size || ""} to Figma`.trim();
+  }
+
+  function showImgApplyResults(applied, errors) {
+    const section = document.getElementById("img-results-section");
+    const box = document.getElementById("img-results-box");
+    const stat = document.getElementById("img-results-stat");
+    const sub = document.getElementById("img-results-sub");
+    const errList = document.getElementById("img-error-list");
+
+    stat.textContent = `${applied} image${applied !== 1 ? "s" : ""} applied to Figma`;
+    sub.textContent = errors.length > 0
+      ? `${errors.length} error(s) — see below`
+      : "All images placed. Check your Figma canvas.";
+
+    if (errors.length > 0) {
+      box.className = "results-box has-errors";
+      errList.classList.remove("hidden");
+      errList.innerHTML = errors.map((e) => `<div class="error-item">⚠ ${e}</div>`).join("");
+    } else {
+      box.className = "results-box success";
+      errList.classList.add("hidden");
+    }
+
+    section.classList.add("visible");
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+</script>
+
+</body>
+</html>

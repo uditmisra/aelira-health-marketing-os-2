@@ -1,0 +1,264 @@
+name: Email Sequence Build
+version: "1.0"
+description: Build a full multi-step nurture or outbound email sequence — persona-targeted, objection-aware, with subject line variants and a quality-gated final review
+system: growth-marketing
+trigger: manual
+
+global_context:
+  - core/brand/voice-and-tone.md
+  - core/brand/messaging-pillars.md
+  - core/icp/primary-icp.md
+  - core/customer-voice/win-loss-interviews/
+
+inputs:
+  - name: sequence_goal
+    description: "What this sequence is trying to achieve"
+    required: true
+    example: "Convert free trial signups to demo bookings"
+  - name: target_segment
+    description: "Who receives this sequence — persona, lifecycle stage, or account characteristic"
+    required: true
+    example: "GC / VP Legal at Series B SaaS, signed up for trial but hasn't booked a demo in 5 days"
+  - name: sequence_length
+    description: "Number of emails in the sequence"
+    required: false
+    default: "5"
+    example: "3, 5, or 7"
+  - name: funnel_stage
+    description: "Where in the funnel this sequence lives"
+    required: true
+    example: "Mid-funnel nurture | Trial activation | Re-engagement | Outbound cold | Post-demo follow-up"
+  - name: key_objection_to_address
+    description: "Primary objection or hesitation to disarm in this sequence (optional — if known)"
+    required: false
+    default: "none_specified"
+    example: "Implementation complexity | Price | Already have a process"
+
+preflight:
+  validate_inputs:
+    - field: sequence_goal
+      on_missing: stop
+      stop_message: "Sequence goal is required. What outcome does a successful sequence produce?"
+    - field: target_segment
+      on_missing: stop
+      stop_message: "Target segment is required. Who receives this sequence and what do we know about them?"
+    - field: funnel_stage
+      on_missing: stop
+      stop_message: "Funnel stage is required — it determines tone, urgency level, and CTA type."
+  context_check:
+    - path: core/customer-voice/win-loss-interviews/
+      on_missing: warn
+      warn_message: "No win/loss data found in core/customer-voice/ — email copy will use messaging pillars without customer-specific language. Consider populating first for higher conversion."
+
+steps:
+  # ─────────────────────────────────────────────────────────────
+  # STEP 1: Sequence brief and objection map
+  # ─────────────────────────────────────────────────────────────
+  - id: sequence_brief
+    name: Build sequence brief and map objections across the arc
+    agent: growth-marketing/agents/email-strategist.md
+    context:
+      - core/icp/primary-icp.md
+      - core/customer-voice/win-loss-interviews/
+      - core/brand/messaging-pillars.md
+    input:
+      source: user_input
+      fields:
+        - sequence_goal
+        - target_segment
+        - sequence_length
+        - funnel_stage
+        - key_objection_to_address
+      instructions: |
+        Build a sequence brief:
+        1. Restate the goal and segment in one sentence each — confirm the reader is real
+        2. Map the emotional arc across the sequence: what does the reader feel at Email 1 vs. Email N?
+        3. Assign one job to each email:
+           Email 1: establish relevance / open the loop
+           Email 2: deepen the problem / make it specific
+           Email 3: proof point or social proof
+           Email 4 (if 5+): objection handling (use key_objection_to_address if provided, otherwise infer from win/loss data)
+           Email 5 (if 5+): direct ask / urgency
+        4. Name the primary objection per email and the one thing that disarms it
+        5. Recommend: (a) send cadence (days between), (b) reply-based vs. click-based triggers, (c) exit conditions
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-1-sequence-brief.md"
+      expected_structure: |
+        SEQUENCE: [goal]
+        SEGMENT: [who]
+        ARC: [emotional journey]
+        EMAIL PLAN:
+          Email 1: [job] | Objection: [n/a or name] | Disarm: [approach]
+          Email N: ...
+        SEND CADENCE: [recommendation]
+        EXIT CONDITIONS: [what triggers removal]
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 2: Write all emails
+  # ─────────────────────────────────────────────────────────────
+  - id: write_emails
+    name: Write full email drafts for every email in the sequence
+    agent: growth-marketing/agents/email-copy-agent.md
+    context:
+      - core/brand/voice-and-tone.md
+      - core/brand/messaging-pillars.md
+      - core/customer-voice/win-loss-interviews/
+    input:
+      source: multiple
+      refs:
+        - sequence_brief.output
+      instructions: |
+        Write every email in the sequence using the brief from Step 1.
+        For each email:
+        - Subject line: 3 variants (curiosity | problem-specific | social proof). Under 50 characters. No "RE:" tricks.
+        - Preview text: 1 variant that complements, not duplicates, the subject line
+        - Body: Short. Max 150 words for nurture. Max 100 words for outbound cold. One idea. One CTA.
+        - CTA: Specific, not generic. "See how [Company] cut contract review time by 60%" not "Learn more."
+        - P.S. line: use on Email 1 and the final email only. One sentence. Reinforces the CTA or adds social proof.
+
+        Apply SpotDraft voice rules:
+        - Peer-to-peer with lawyers, not vendor-to-buyer
+        - Lead with their pain, not our product
+        - No buzzwords (streamline, seamlessly, robust)
+        - Specific proof points, not vague claims
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-2-email-drafts.md"
+      expected_structure: |
+        --- EMAIL 1 ---
+        Subject variants: [3 options]
+        Preview text: [1 option]
+        Body: [full copy]
+        CTA: [exact text and link destination]
+        P.S.: [if applicable]
+
+        --- EMAIL N ---
+        [same structure]
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 3: Quality gate — score all emails
+  # ─────────────────────────────────────────────────────────────
+  - id: quality_gate
+    name: Score all emails against quality criteria
+    agent: growth-marketing/agents/asset-quality-gate.md
+    context:
+      - core/brand/voice-and-tone.md
+      - core/brand/messaging-pillars.md
+      - core/icp/primary-icp.md
+    input:
+      source: multiple
+      refs:
+        - write_emails.output
+      instructions: |
+        Score every email against three criteria:
+        (a) On-message per messaging-pillars.md — does it reinforce a pillar with specificity?
+        (b) ICP-relevant — does it speak directly to this persona's pain, role, and trigger?
+        (c) Specific not generic — does it contain at least one specific proof point or outcome?
+
+        Also check:
+        - Voice compliance: no banned words, peer-to-peer tone maintained throughout
+        - CTA clarity: is it obvious what to do and what happens next?
+        - Subject line differentiation: are the 3 variants genuinely different approaches?
+
+        For any email that fails on any criterion: revise it once and re-score.
+        Present the final scored versions — do not present failing emails for human review.
+
+        Score format per email: [email number] [PASS/REVISED] — [one-line rationale]
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-3-quality-scores.md"
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 4: [GATE] Human review and approval
+  # ─────────────────────────────────────────────────────────────
+  - id: human_review
+    name: "[GATE] Review complete sequence before publishing"
+    agent: none
+    gate:
+      type: human_approval
+      present_as: |
+        ## Gate: Email Sequence Review
+
+        All emails have passed the quality gate. Review the full sequence now.
+
+        **How to respond:**
+        - `approve` — sequence is ready to load into your email platform
+        - `reject [email number]: [reason]` — rewrite specific email(s)
+        - `modify [email number]: [specific change]` — apply a targeted edit
+        - `approve with notes: [notes]` — approve but log feedback for future sequences
+
+        **What to check:**
+        - Does the arc feel natural? Does each email build on the last?
+        - Does the tone stay consistent with how your team actually talks to lawyers?
+        - Is the final CTA as clear and specific as it should be?
+        - Would you personally forward Email 1 to a colleague? If not, why not?
+      on_approve: continue
+      on_reject: return_to_write_emails
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 5: Build HubSpot sequence
+  # ─────────────────────────────────────────────────────────────
+  - id: build_hubspot_sequence
+    name: Build draft sequence in HubSpot
+    agent: growth-marketing/agents/hubspot-sequence-builder.md
+    input:
+      source: multiple
+      refs:
+        - write_emails.output          # approved email copy
+        - sequence_brief.output        # cadence + exit conditions
+      additional:
+        sequence_goal: "{{sequence_goal}}"
+        run_id: "{{run_id}}"
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-5-hubspot-sequence.md"
+    deliver_to:
+      type: hubspot_sequence
+      name: "{{sequence_goal}} — {{run_id}}"
+      format: email_sequence
+      mcp_required: hubspot
+      fallback: |
+        HubSpot MCP not connected. Use the copy-paste package in step-5-hubspot-sequence.md
+        to manually create the sequence in HubSpot CRM > Sequences > Create sequence.
+    gate:
+      type: none
+
+  # ─────────────────────────────────────────────────────────────
+  # STEP 6: Archive and log
+  # ─────────────────────────────────────────────────────────────
+  - id: archive
+    name: Archive sequence and log to signal log
+    agent: none
+    actions:
+      - type: append_to_file
+        target: "core/system-intelligence/signal-log/signal-log-{{run_id}}.md"
+        content: |
+          [{{run_id}}] workflow-run: email-sequence-build
+          Segment: {{target_segment}}
+          Goal: {{sequence_goal}}
+          Emails written: {{sequence_length}}
+          Human approval: granted
+          Output: runs/{{workflow}}/{{run_id}}/step-2-email-drafts.md
+    output:
+      path: "runs/{{workflow}}/{{run_id}}/step-5-archive.md"
+    gate:
+      type: none
+
+output:
+  summary: "Full email sequence — {{sequence_length}} emails, quality-gated, human-approved"
+  deliverables:
+    - path: "runs/{{workflow}}/{{run_id}}/step-2-email-drafts.md"
+      label: "Complete email sequence (all drafts with subject line variants)"
+    - path: "runs/{{workflow}}/{{run_id}}/step-3-quality-scores.md"
+      label: "Quality gate scores"
+    - path: "runs/{{workflow}}/{{run_id}}/run-summary.md"
+      label: "Run summary"
+
+on_completion:
+  triggers:
+    - condition: "any email revised by quality gate"
+      suggestion: null
+      message: "One or more emails failed the quality gate and were revised. Log a human rating after the sequence runs live — this data trains the email-copy-agent to require fewer revisions over time."
