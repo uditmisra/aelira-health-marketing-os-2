@@ -71,3 +71,7 @@ Rule for future batches: Lead with the emotional job (certainty, clarity, relief
 **Proof gaps count: 4** — if a customer discovery sprint is available, running it would directly address the jaw-dropping-moments.md gap and the social proof density problem.
 
 **Pass rate: 100%** — no messaging audit triggered.
+
+## Delivery
+
+**Google Sheet:** https://docs.google.com/spreadsheets/d/1YT6fS5k_WMp6xTCnN-s-4Kx8DdhLLUuuqvkSTqv7Cj4/edit
