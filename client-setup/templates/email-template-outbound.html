@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{subject_line}}</title>
+  <!--
+    AELIRA LUNG CARE — OUTBOUND / SDR EMAIL TEMPLATE
+    Built by: brand-bootstrap run 2026-03-15-001
+    Use for: Sales sequences, doctor referral outreach, SDR follow-ups
+    Design principle: Deliverability first. No logo, no background colors, no decorative styling.
+    Looks like a personal email from a colleague.
+
+    HOW TO USE:
+    1. Keep total word count under 150 for best reply rates
+    2. One CTA only — never two asks in the same email
+    3. Send from a personal inbox (yourname@aelira.in), NOT a marketing alias
+    4. Do NOT attach files — kills deliverability
+    5. Lead with something specific to the recipient (city AQI, their specialty, patient profile)
+  -->
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #FFFFFF;
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      color: #374151;
+    }
+    .wrapper {
+      max-width: 560px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+    p {
+      font-size: 16px;
+      line-height: 1.65;
+      color: #374151;
+      margin: 0 0 18px 0;
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    }
+    a {
+      color: #2E6B40;
+      text-decoration: underline;
+    }
+    /* Signature block */
+    .signature {
+      margin-top: 32px;
+      padding-top: 20px;
+      border-top: 1px solid #E5E7EB;
+    }
+    .signature p {
+      font-size: 14px;
+      color: #6B7280;
+      margin: 0 0 4px 0;
+    }
+    .signature .sender-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1B5E30;
+      margin-bottom: 4px;
+    }
+    /* Footer — legal minimum */
+    .footer {
+      margin-top: 40px;
+      font-size: 12px;
+      color: #9CA3AF;
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    }
+    .footer a {
+      color: #9CA3AF;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+
+    <!-- Greeting -->
+    <p>Hi {{first_name}},</p>
+
+    <!--
+      Body: 3 short paragraphs max. Total under 150 words.
+      Para 1: Specific hook — something relevant to them (e.g., AQI in their city, COPD patient volume)
+      Para 2: What Aelira does and why it's relevant to them
+      Para 3: Social proof or outcome (one patient story, one stat)
+    -->
+    <p>{{body_paragraph_1}}</p>
+    <p>{{body_paragraph_2}}</p>
+    <p>{{body_paragraph_3}}</p>
+
+    <!--
+      CTA line — one ask only.
+      Examples:
+      - "Would a 15-minute call this week make sense? Here's my calendar: [link]"
+      - "Happy to send over our referral pack — shall I?"
+      - "We have a slot open on Thursday morning if that works."
+    -->
+    <p>{{cta_line}}</p>
+
+    <!-- Signature -->
+    <div class="signature">
+      <p class="sender-name">{{sender_name}}</p>
+      <p>{{sender_title}}, Aelira Lung Care</p>
+      <p>+91 966 711 7222</p>
+      <p><a href="https://aelira.in">aelira.in</a></p>
+    </div>
+
+    <!-- Legal footer — required -->
+    <div class="footer">
+      <a href="{{unsubscribe_url}}">Unsubscribe</a>
+    </div>
+
+  </div>
+</body>
+</html>
