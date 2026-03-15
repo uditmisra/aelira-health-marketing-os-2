@@ -1,4 +1,11 @@
 # Headline Batch — Aelira Lung Care Inquiry Campaign — 2026-03-15
+## REVISION v2 — Benefit-led cluster rewritten per Gate 1 rejection
+
+**Rejection feedback applied:** "Benefit frames are too technical, need to be more emotional."
+**Diagnosis:** G-B and M-B headlines led with specs ("50+ metrics," "PFT, FeNO & FOT") — the *what you receive* layer. Rewritten to lead with the *emotional outcome* — certainty, clarity, finally knowing. Technical specifics move to copy layer.
+**Scope of revision:** Benefit-led cluster only (G-B1/B2/B3 and M-B1/B2/B3). All other frames carry forward unchanged.
+
+---
 
 Platform: Google Ads + Meta Ads
 Pillar focus: All three
@@ -6,47 +13,44 @@ Funnel stage: Awareness + Consideration
 CTA direction: Phone call / WhatsApp inquiry / Free consult booking
 Persona: Primary — Urban Worried Breathless (35–65, South Delhi); Secondary — COPD/ILD Rehab Candidate
 
-**Note on campaign brief:** The brief stated “Generate inquiries” without explicit funnel stage, persona, or CTA. These fields have been inferred from `core/icp/primary-icp.md` and `core/brand/messaging-pillars.md`. Running as Awareness/Consideration since this is a new campaign with no prior performance data. If a specific segment (e.g. rehab-only) is intended, flag and re-run with updated brief.
-
-**Note on jaw-dropping-moments.md:** This file does not yet exist in `core/customer-voice/`. Headlines have been generated from `core/brand/messaging-pillars.md`, `core/icp/primary-icp.md`, and on-site patient review verbatims captured in `raw-research.md`. Recommend creating `core/customer-voice/jaw-dropping-moments.md` to improve future batches.
-
-**Hypothesis being tested:** No prior ad hypotheses exist (`core/system-intelligence/ad-hypotheses.md` not yet created). This batch is designed to test the first open question: **Does problem-led framing (symptom-specific) outperform benefit-led framing (outcome-specific) for Aelira’s primary inquiry goal?** Equal numbers of each frame type generated. Tag P-frames and B-frames in your ad platform for A/B data readback.
-
 ---
 
 ## GOOGLE ADS HEADLINES (30 chars max)
 
-### Problem-led — Pillar 2: Built for Delhi’s Lungs
+### Problem-led — Pillar 2 [UNCHANGED]
 | # | Headline | Chars | Pillar |
 |---|---|---|---|
 | G-P1 | Getting breathless in Delhi? | 28 | P2 |
-| G-P2 | Lungs struggling with Delhi air? | 32 ⚠️ → trim: Delhi air hurting your lungs? | 29 | P2 |
+| G-P2 | Delhi air hurting your lungs? | 30 | P2 |
 | G-P3 | Breathless more than before? | 28 | P2 |
 
-> G-P2 trimmed to: **Delhi air hurting your lungs?** (30) ✓
+### Benefit-led — Pillar 1 [REWRITTEN v2]
+| # | Headline | Chars | Pillar | Change |
+|---|---|---|---|---|
+| G-B1 | Finally know your lungs. | 24 | P1 | Was: "50+ metrics, same-day report" → now emotional: certainty |
+| G-B2 | Leave with answers today. | 25 | P1 | Was: "Results before you leave" → now frames the *feeling* of leaving with clarity |
+| G-B3 | Stop guessing. Know. | 20 | P1 | Was: "PFT, FeNO & FOT, one visit" → now names the emotional job directly |
 
-### Benefit-led — Pillar 1: Most Complete Lung Picture
+**Why these work now:** Remove brand name. Remove product. Do they still communicate something?
+- "Finally know your lungs." → Yes — implies prior uncertainty + resolution. ✓
+- "Leave with answers today." → Yes — urgency + clarity outcome. ✓
+- "Stop guessing. Know." → Yes — names the exact emotional shift. ✓
+
+### Curiosity-led — Pillar 2 + Pillar 1 [UNCHANGED]
 | # | Headline | Chars | Pillar |
 |---|---|---|---|
-| G-B1 | 50+ metrics, same-day report | 28 | P1 |
-| G-B2 | Results before you leave | 24 | P1 |
-| G-B3 | PFT, FeNO & FOT, one visit | 26 | P1 |
-
-### Curiosity-led — Pillar 2 + Pillar 1
-| # | Headline | Chars | Pillar |
-|---|---|---|---|
-| G-C1 | Who’s checking your lungs? | 26 | P2 |
+| G-C1 | Who's checking your lungs? | 26 | P2 |
 | G-C2 | What your PFT missed | 20 | P1 |
 | G-C3 | Is Delhi air damaging yours? | 28 | P2 |
 
-### Social proof-led — Pillar 1
+### Social proof-led — Pillar 1 [UNCHANGED]
 | # | Headline | Chars | Pillar |
 |---|---|---|---|
-| G-S1 | Best lung test I’ve ever had | 28 | P1 |
+| G-S1 | Best lung test I've ever had | 28 | P1 |
 | G-S2 | 50 metrics. Same-day results. | 29 | P1 |
 | G-S3 | ATS & WHO-endorsed rehab | 24 | P3 |
 
-### Comparison-led — Pillar 1
+### Comparison-led — Pillar 1 [UNCHANGED]
 | # | Headline | Chars | Pillar |
 |---|---|---|---|
 | G-X1 | Beyond basic spirometry | 23 | P1 |
@@ -57,56 +61,51 @@ Persona: Primary — Urban Worried Breathless (35–65, South Delhi); Secondary 
 
 ## META ADS HEADLINES (27 chars visible / ~40 before truncation)
 
-Meta note: Front-load the hook. First 27 chars must land the frame.
-
-### Problem-led — Pillar 2
+### Problem-led — Pillar 2 [UNCHANGED]
 | # | Headline | Chars | Pillar |
 |---|---|---|---|
 | M-P1 | Still breathless after COVID? | 29 | P2 |
-| M-P2 | Delhi’s air damaging your lungs? | 32 | P2 |
+| M-P2 | Delhi's air damaging your lungs? | 32 | P2 |
 | M-P3 | Breathless more than before? | 28 | P2 |
 
-Note: M-P1 and M-P3 are within Facebook’s display window. M-P2 will truncate to “Delhi’s air damaging your…” — hook survives; acceptable.
+### Benefit-led — Pillar 1 [REWRITTEN v2]
+| # | Headline | Chars | Pillar | Change |
+|---|---|---|---|---|
+| M-B1 | Finally know your lungs. | 24 | P1 | Was: "50+ lung metrics. Same-day." → emotional: certainty after anxiety |
+| M-B2 | Leave with answers today. | 25 | P1 | Was: "Results before you leave." → now frames how the patient *feels* leaving |
+| M-B3 | Stop guessing about your lungs. | 31 | P1 | Was: "Your lungs. 50 metrics. Today." → will truncate to "Stop guessing about your…" — hook survives ✓ |
 
-### Benefit-led — Pillar 1
+### Curiosity-led — Pillar 2 [UNCHANGED]
 | # | Headline | Chars | Pillar |
 |---|---|---|---|
-| M-B1 | 50+ lung metrics. Same-day. | 27 | P1 |
-| M-B2 | Results before you leave. | 25 | P1 |
-| M-B3 | Your lungs. 50 metrics. Today. | 30 | P1 |
-
-### Curiosity-led — Pillar 2
-| # | Headline | Chars | Pillar |
-|---|---|---|---|
-| M-C1 | Who’s checking your lungs? | 26 | P2 |
+| M-C1 | Who's checking your lungs? | 26 | P2 |
 | M-C2 | What Delhi air does to you | 26 | P2 |
 | M-C3 | Your spirometry missed this. | 27 | P1 |
 
-### Social proof-led — Pillar 1
+### Social proof-led — Pillar 1 [UNCHANGED]
 | # | Headline | Chars | Pillar |
 |---|---|---|---|
-| M-S1 | “Best experience end-to-end” | 27 | P1 |
+| M-S1 | "Best experience end-to-end" | 27 | P1 |
 | M-S2 | ATS + WHO + BTS endorsed | 24 | P3 |
-| M-S3 | “Over 50 metrics. Same day.” | 27 | P1 |
+| M-S3 | "Over 50 metrics. Same day." | 27 | P1 |
 
-### Comparison-led — Pillar 1
+### Comparison-led — Pillar 1 [UNCHANGED]
 | # | Headline | Chars | Pillar |
 |---|---|---|---|
 | M-X1 | Not a hospital. Only lungs. | 27 | P1 |
 | M-X2 | More than basic spirometry | 26 | P1 |
-| M-X3 | South Delhi’s lung specialist | 29 | P1 |
+| M-X3 | South Delhi's lung specialist | 29 | P1 |
 
 ---
 
 ## Notes
 
-**Headlines with proof gaps** (claim present but no hard statistic in messaging-pillars.md):
-- G-S1 / M-S1: "Best experience" framing — these use patient review verbatims, not a claimed statistic. Low risk: they are direct quotes. Acceptable without additional proof.
-- G-S3 / M-S2: ATS/WHO/BTS endorsement — verified from site (logos displayed on rehab page). Proof is solid.
+**Revision rationale — benefit-led cluster:**
+The original benefit-led headlines used the *delivery mechanism* (50+ metrics, PFT/FeNO/FOT) as the lead. The voice-and-tone guide says: "Lead with the patient's experience, not our services." The emotional job for a patient booking a lung test is **certainty** — they want to stop not knowing. The revised headlines name that job directly. The technical specifics (50+ metrics, test types, same-day) remain in the copy layer where they substantiate the emotional promise.
 
-**Customer language sourced from patient reviews (in lieu of jaw-dropping-moments.md):**
-- G-B1 “50+ metrics, same-day report” — Ankit review: “clearly laid out over 50 metrics”
-- G-B2 “Results before you leave” — Reena review: “given my report immediately”
-- M-S1 “Best experience end-to-end” — Udit review: verbatim
+**Unchanged frames carried forward:**
+All five frames remain present. Frames G-P, G-C, G-S, G-X, M-P, M-C, M-S, M-X are identical to v1.
 
-**Active hypothesis this batch tests:** H-001 (new — to be logged): Does problem-led framing (G-P / M-P) outperform benefit-led framing (G-B / M-B) for inquiry-stage campaigns? Tag ad groups accordingly in Google/Meta for clean A/B data.
+**Hypothesis preserved:** H-001 — problem-led (G-P/M-P) vs. benefit-led (G-B/M-B) for inquiry generation. The emotional rewrite makes the benefit-led test cleaner — we're now comparing "symptom identification" (P-frames) vs. "certainty/resolution" (B-frames), which is a more meaningful A/B than specs vs. symptoms.
+
+**Customer language note:** `core/customer-voice/jaw-dropping-moments.md` still does not exist. Recommend creating after this run. The "finally know" / "stop guessing" language is inferred from patient JTBD in `core/icp/primary-icp.md` — "I want to stop not knowing." Not a verbatim quote, but grounded in the documented functional/emotional job.
